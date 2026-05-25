@@ -2,18 +2,19 @@
  * Pipeline de procesamiento del CSV de artículos:
  *   parseCsv → mapColumnas → parseColor → preview / upsert.
  *
- * El CSV trae columnas indexadas por letra de planilla (sección 3.1):
- *   B (1) — artículo / código
- *   C (2) — cliente
- *   D (3) — descripción
+ * El CSV trae columnas indexadas por letra de planilla:
+ *   A (0) — nro / nombre del artículo (también es de donde el parser
+ *           saca el color)
+ *   B (1) — cliente
+ *   C (2) — descripción
  *   J (9) — piezas por hora
  */
 import { parseCsv, parseNumeroLatam } from "@/lib/csv";
 import { parseColor } from "@/lib/color-parser";
 
-const COL_ARTICULO = 1; // B
-const COL_CLIENTE = 2; // C
-const COL_DESCRIPCION = 3; // D
+const COL_ARTICULO = 0; // A
+const COL_CLIENTE = 1; // B
+const COL_DESCRIPCION = 2; // C
 const COL_PIEZAS_HORA = 9; // J
 
 export interface FilaProcesada {
@@ -71,7 +72,7 @@ export function procesarCsvArticulos(csvText: string): ProcesoCsvResult {
     if (!codigo) {
       errores.push({
         lineaOriginal: linea,
-        motivo: "Falta el código del artículo (columna B)",
+        motivo: "Falta el código del artículo (columna A)",
         preview: r.join(" | "),
       });
       continue;
@@ -79,7 +80,7 @@ export function procesarCsvArticulos(csvText: string): ProcesoCsvResult {
     if (!cliente) {
       errores.push({
         lineaOriginal: linea,
-        motivo: "Falta el cliente (columna C)",
+        motivo: "Falta el cliente (columna B)",
         preview: r.join(" | "),
       });
       continue;
