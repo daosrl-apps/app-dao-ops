@@ -1,0 +1,82 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://dao-ops.beyondit.ar
+
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Deploy on Contabo
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o UserKnownHostsFile=~/.ssh/known_hosts \
+            "$SSH_USER@$SSH_HOST" \
+            bash -se <<'REMOTE'
+          set -euo pipefail
+          cd /opt/docker/dao-ops
+
+          echo "==> git pull"
+          git pull --ff-only origin main
+
+          echo "==> sincronizar vhost de nginx con el repo"
+          cp nginx/dao-ops.conf /opt/docker/eventosips/nginx/conf.d/dao-ops.conf
+
+          echo "==> build images"
+          docker compose -f compose.yaml -f compose.prod.yaml build
+
+          echo "==> apply migrations"
+          # -T sin tty + </dev/null para que `compose run` no se trague el resto
+          # del heredoc (mismo gotcha que sofia).
+          docker compose -f compose.yaml -f compose.prod.yaml run --rm -T web \
+            npx prisma migrate deploy < /dev/null
+
+          echo "==> seed (idempotente — actualiza el PIN del admin desde .env)"
+          docker compose -f compose.yaml -f compose.prod.yaml run --rm -T web \
+            npx tsx prisma/seed.ts < /dev/null || echo "    warn: seed falló, continuando"
+
+          echo "==> bring services up (force-recreate web para rotar el image)"
+          docker compose -f compose.yaml -f compose.prod.yaml up -d db
+          docker compose -f compose.yaml -f compose.prod.yaml up -d --force-recreate web
+
+          echo "==> asegurar que web esté en la red web-proxy compartida"
+          docker network connect web-proxy dao-ops-web-1 2>/dev/null || true
+
+          echo "==> nginx reload (proxy compartido de eventosips)"
+          docker exec eventosips-nginx-1 nginx -s reload
+
+          echo "==> esperar healthcheck"
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            if curl -fsS https://dao-ops.beyondit.ar/api/health >/dev/null; then
+              echo "    healthy"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Health check falló después del rollout" >&2
+          docker compose -f compose.yaml -f compose.prod.yaml logs --tail=80 web >&2 || true
+          exit 1
+          REMOTE

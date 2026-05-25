@@ -1,0 +1,51 @@
+# Docker compose local — db + web en http://localhost:3000.
+# Para producción se aplica compose.prod.yaml encima (web-proxy externo, etc.).
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-daoops}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-daoops}
+      POSTGRES_DB: ${POSTGRES_DB:-daoops}
+    volumes:
+      - dao-ops-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-daoops} -d ${POSTGRES_DB:-daoops}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "127.0.0.1:5433:5432"
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      NODE_ENV: ${NODE_ENV:-development}
+    ports:
+      - "3000:3000"
+    healthcheck:
+      # node one-liner — BusyBox wget en alpine a veces devuelve != 0 con 200.
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://127.0.0.1:3000/api/health',r=>process.exit(r.statusCode>=200&&r.statusCode<300?0:1)).on('error',()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  dao-ops-db-data:

@@ -1,0 +1,80 @@
+// dao-ops — schema base. La capa de dominio (línea, piezas, horno) se agrega
+// cuando llegue el prompt detallado.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OPERARIO
+  SUPERVISOR
+  ADMIN
+}
+
+/// Usuario de la planta. Se identifica con un PIN de 6 dígitos único.
+/// El PIN está hasheado con bcrypt — nunca lo guardamos en claro.
+model User {
+  id             String    @id @default(cuid())
+  name           String
+  /// bcrypt hash del PIN. La unicidad del PIN se garantiza en la API al crear
+  /// el usuario (no se puede hacer @unique sobre el hash).
+  pinHash        String
+  role           Role      @default(OPERARIO)
+  isActive       Boolean   @default(true)
+  /// Contador de intentos fallidos consecutivos. Se resetea al loguearse OK.
+  failedAttempts Int       @default(0)
+  /// Si está seteado y es futuro, el usuario está bloqueado hasta esa fecha.
+  lockedUntil    DateTime?
+  lastLoginAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  sessions Session[]
+
+  @@index([isActive])
+}
+
+/// Una sesión activa. El JWT en la cookie carga `id` para chequear en DB y
+/// poder revocar (al hacer logout, baja del staff, etc.).
+model Session {
+  id          String   @id @default(cuid())
+  userId      String
+  /// Token opaco generado en login. Mismo valor que va dentro del JWT firmado.
+  /// La cookie lleva el JWT (firma + expiración); el server confirma que el
+  /// token sigue vivo en esta tabla — esa es la palanca de revocación.
+  token       String   @unique
+  expiresAt   DateTime
+  /// Info del tótem/tablet desde donde se logueó (audit).
+  userAgent   String?
+  ip          String?
+  createdAt   DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+/// Log de eventos de auth (login OK/FAIL, logout, lockout). Útil para
+/// auditar quién operó qué tótem y para investigar patrones de PIN incorrecto.
+model AuthEvent {
+  id        String   @id @default(cuid())
+  userId    String?
+  /// "login.ok", "login.fail", "logout", "lockout"
+  action    String
+  ip        String?
+  userAgent String?
+  details   Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
