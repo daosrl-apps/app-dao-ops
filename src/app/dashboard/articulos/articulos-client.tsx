@@ -308,8 +308,8 @@ function ImportarCsv({ onDone }: { onDone: () => void }) {
           <h2 className="text-xl font-semibold text-slate-800">Importar catálogo desde CSV</h2>
           <p className="text-slate-600 text-sm">
             Columnas relevantes: <b>A</b> artículo, <b>B</b> cliente, <b>C</b> descripción,{" "}
-            <b>J</b> piezas por hora. Se acepta separador <code>,</code> o <code>;</code>. El color
-            se extrae del nombre del artículo (columna A).
+            <b>I</b> piezas por hora. Separador: <code>,</code>. El color se extrae del nombre del
+            artículo (columna A).
           </p>
         </div>
       </div>

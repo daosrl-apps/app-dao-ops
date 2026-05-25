@@ -7,7 +7,7 @@
  *           saca el color)
  *   B (1) — cliente
  *   C (2) — descripción
- *   J (9) — piezas por hora
+ *   I (8) — piezas por hora
  */
 import { parseCsv, parseNumeroLatam } from "@/lib/csv";
 import { parseColor } from "@/lib/color-parser";
@@ -15,7 +15,7 @@ import { parseColor } from "@/lib/color-parser";
 const COL_ARTICULO = 0; // A
 const COL_CLIENTE = 1; // B
 const COL_DESCRIPCION = 2; // C
-const COL_PIEZAS_HORA = 9; // J
+const COL_PIEZAS_HORA = 8; // I
 
 export interface FilaProcesada {
   /// Número de fila original (1-based, incluye header si la había).
@@ -89,7 +89,7 @@ export function procesarCsvArticulos(csvText: string): ProcesoCsvResult {
     if (piezasPorHora === null || piezasPorHora <= 0) {
       errores.push({
         lineaOriginal: linea,
-        motivo: `Piezas por hora inválido (columna J): "${piezasRaw}"`,
+        motivo: `Piezas por hora inválido (columna I): "${piezasRaw}"`,
         preview: r.join(" | "),
       });
       continue;
