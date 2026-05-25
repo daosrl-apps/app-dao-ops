@@ -46,6 +46,9 @@ export async function POST(req: NextRequest) {
 
   let matched: (typeof users)[number] | null = null;
   for (const u of users) {
+    // Usuarios sin pinHash (supervisor/admin que loguean con password) no
+    // pueden entrar por esta ruta.
+    if (!u.pinHash) continue;
     if (await comparePin(pin, u.pinHash)) {
       matched = u;
       break;

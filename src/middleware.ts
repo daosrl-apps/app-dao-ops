@@ -12,7 +12,7 @@ import { jwtVerify } from "jose";
 
 const SESSION_COOKIE = "dao_ops_session";
 const SECRET = new TextEncoder().encode(process.env.AUTH_SECRET ?? "");
-const PROTECTED_PREFIXES = ["/dashboard"];
+const PROTECTED_PREFIXES = ["/dashboard", "/operario"];
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -35,5 +35,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*"],
+  matcher: ["/dashboard/:path*", "/operario/:path*"],
 };
