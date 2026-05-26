@@ -98,7 +98,7 @@ function PcpTimeline({
       finTeorico: Date;
       inicioReal: Date | null;
       finReal: Date | null;
-      articulo: { codigo: string; cliente: { nombre: string } };
+      articulo: { codigo: string; descripcion: string | null; cliente: { nombre: string } };
     }[];
   };
 }) {
@@ -133,21 +133,23 @@ function ItemRow({
     finTeorico: Date;
     inicioReal: Date | null;
     finReal: Date | null;
-    articulo: { codigo: string; cliente: { nombre: string } };
+    articulo: { codigo: string; descripcion: string | null; cliente: { nombre: string } };
   };
 }) {
   const desviacionMin =
     item.finReal && item.finTeorico
       ? Math.round((item.finReal.getTime() - item.finTeorico.getTime()) / 60000)
       : null;
+  const titulo = item.articulo.descripcion?.trim() || item.articulo.codigo;
 
   return (
     <li className="grid grid-cols-1 md:grid-cols-[1fr_auto_auto] gap-3 items-center rounded-xl bg-slate-50 border border-slate-200 p-3">
       <div>
-        <p className="font-semibold text-slate-800">
-          #{item.orden + 1} · {item.articulo.cliente.nombre} · {item.articulo.codigo}
+        <p className="text-xs uppercase tracking-wider text-slate-500">
+          #{item.orden + 1} · {item.articulo.cliente.nombre}
         </p>
-        <p className="text-sm text-slate-600">
+        <p className="text-lg font-black tracking-tight text-slate-900">{titulo}</p>
+        <p className="text-sm font-medium text-slate-600">
           {item.cantidad} pzs · {item.color}
         </p>
       </div>

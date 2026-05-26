@@ -96,9 +96,13 @@ function RowAnterior({ item, animar }: { item: LineaItem | null; animar: boolean
       <p className="uppercase tracking-widest text-sm text-slate-500 mb-2">Orden anterior</p>
       {item ? (
         <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
-          <span className="text-3xl md:text-5xl font-bold">{item.cliente.nombre}</span>
-          <span className="text-2xl md:text-4xl">{item.articulo.codigo}</span>
-          <span className="text-xl md:text-3xl text-slate-500">
+          <span className="text-3xl md:text-5xl font-black tracking-tight">
+            {item.cliente.nombre}
+          </span>
+          <span className="text-2xl md:text-4xl font-black tracking-tight">
+            {nombreOrden(item)}
+          </span>
+          <span className="text-xl md:text-3xl font-bold text-slate-500">
             {item.cantidad} pzs · {item.color}
           </span>
         </div>
@@ -173,15 +177,20 @@ function RowActual({
 
       <div className="mt-6 md:mt-10 grid grid-cols-1 md:grid-cols-[1fr_auto] gap-6 items-center">
         <div>
-          <p className="text-4xl md:text-6xl font-bold leading-tight">{item.cliente.nombre}</p>
-          <p className="text-3xl md:text-5xl font-semibold mt-2 text-slate-200">
-            {item.articulo.codigo} · {item.color}
+          <p className="text-5xl md:text-7xl font-black tracking-tight leading-tight">
+            {item.cliente.nombre}
           </p>
-          <p className="text-2xl md:text-3xl text-slate-300 mt-1">{item.cantidad} piezas</p>
+          <p className="text-4xl md:text-6xl font-black tracking-tight mt-2 text-slate-100">
+            {nombreOrden(item)}
+          </p>
+          <p className="text-3xl md:text-5xl font-bold mt-2 text-slate-200">{item.color}</p>
+          <p className="text-2xl md:text-3xl font-semibold text-slate-300 mt-1">
+            {item.cantidad} piezas
+          </p>
         </div>
         <div
           className={
-            "font-mono tabular-nums text-7xl md:text-9xl font-bold tracking-wider " +
+            "font-mono tabular-nums text-7xl md:text-9xl font-black tracking-wider " +
             (sobretiempo ? "text-red-400" : enPausa ? "text-amber-300" : "text-white")
           }
         >
@@ -204,9 +213,13 @@ function RowSiguiente({ item, animar }: { item: LineaItem | null; animar: boolea
       <p className="uppercase tracking-widest text-sm text-slate-400 mb-2">Siguiente</p>
       {item ? (
         <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
-          <span className="text-3xl md:text-5xl font-bold">{item.cliente.nombre}</span>
-          <span className="text-2xl md:text-4xl">{item.articulo.codigo}</span>
-          <span className="text-xl md:text-3xl text-slate-400">
+          <span className="text-3xl md:text-5xl font-black tracking-tight">
+            {item.cliente.nombre}
+          </span>
+          <span className="text-2xl md:text-4xl font-black tracking-tight">
+            {nombreOrden(item)}
+          </span>
+          <span className="text-xl md:text-3xl font-bold text-slate-400">
             {item.cantidad} pzs · {item.color}
           </span>
         </div>
@@ -236,4 +249,9 @@ function formatHHMMSS(ms: number) {
 
 function pad(n: number) {
   return n.toString().padStart(2, "0");
+}
+
+/** Texto principal: descripción si existe, si no el código. */
+function nombreOrden(item: LineaItem) {
+  return item.articulo.descripcion?.trim() || item.articulo.codigo;
 }

@@ -90,6 +90,7 @@ interface ItemBorrador {
   clienteNombre: string;
   articuloId: string;
   articuloCodigo: string;
+  articuloDescripcion: string | null;
   piezasPorHora: number;
   configPerchas: string | null;
   color: string;
@@ -419,11 +420,10 @@ function ItemCard({
         </button>
       </div>
       <div className="flex-1 p-4">
-        <div className="flex flex-wrap gap-x-3 gap-y-1 items-baseline">
-          <span className="text-lg font-semibold text-slate-800">{item.clienteNombre}</span>
-          <span className="text-slate-500">·</span>
-          <span className="text-lg text-slate-700">{item.articuloCodigo}</span>
-        </div>
+        <p className="text-xs uppercase tracking-wider text-slate-500">{item.clienteNombre}</p>
+        <p className="text-xl font-black tracking-tight text-slate-900 leading-tight">
+          {item.articuloDescripcion?.trim() || item.articuloCodigo}
+        </p>
         <div className="mt-1 text-sm text-slate-600 flex flex-wrap gap-x-3 gap-y-1">
           <span>
             <b>{item.cantidad}</b> piezas · <b>{item.color}</b>
@@ -528,6 +528,7 @@ function ItemForm({
       clienteNombre: cliente.nombre,
       articuloId: articulo.id,
       articuloCodigo: articulo.codigo,
+      articuloDescripcion: articulo.descripcion,
       piezasPorHora: articulo.piezasPorHora,
       configPerchas: articulo.configPerchas,
       color: color || articulo.color,

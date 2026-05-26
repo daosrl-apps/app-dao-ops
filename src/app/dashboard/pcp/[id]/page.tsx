@@ -51,10 +51,13 @@ export default async function PcpDetailPage({
           >
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div>
-                <p className="text-lg font-semibold text-slate-800">
-                  #{idx + 1} · {it.articulo.cliente.nombre} · {it.articulo.codigo}
+                <p className="text-xs uppercase tracking-wider text-slate-500">
+                  #{idx + 1} · {it.articulo.cliente.nombre}
                 </p>
-                <p className="text-sm text-slate-600 mt-1">
+                <p className="text-2xl font-black text-slate-900 tracking-tight mt-0.5">
+                  {it.articulo.descripcion?.trim() || it.articulo.codigo}
+                </p>
+                <p className="text-sm font-medium text-slate-600 mt-1">
                   {it.cantidad} pzs · {it.color}
                   {it.incluyeLavado &&
                     ` · lavado ${it.piezasPorPercha}/percha @ ${it.velocidadLavado} m/s`}

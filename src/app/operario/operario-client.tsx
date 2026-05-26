@@ -197,10 +197,13 @@ function ItemPendiente({
   return (
     <div className="text-center max-w-3xl w-full">
       <p className="uppercase tracking-wider text-slate-400 text-sm mb-2">Próxima orden</p>
-      <h1 className="text-4xl md:text-5xl font-bold mb-3">
-        {item.cliente.nombre} · {item.articulo.codigo}
+      <h1 className="text-5xl md:text-6xl font-black tracking-tight leading-tight mb-2">
+        {item.cliente.nombre}
       </h1>
-      <p className="text-2xl text-slate-300 mb-8">
+      <p className="text-3xl md:text-4xl font-black text-slate-100 tracking-tight mb-3">
+        {nombreOrden(item)}
+      </p>
+      <p className="text-2xl font-bold text-slate-300 mb-8">
         {item.cantidad} piezas · {item.color}
       </p>
       <button
@@ -244,17 +247,18 @@ function ItemEnCurso({
     <div className="w-full max-w-4xl">
       <div className="rounded-3xl bg-black text-white border-4 border-emerald-500/30 p-8 shadow-2xl">
         <p className="uppercase tracking-widest text-emerald-400 text-sm mb-3">En línea</p>
-        <h1 className="text-3xl md:text-5xl font-bold leading-tight">
+        <h1 className="text-4xl md:text-6xl font-black tracking-tight leading-tight">
           {item.cliente.nombre}
         </h1>
-        <p className="text-2xl md:text-3xl font-semibold mt-2 text-slate-200">
-          {item.articulo.codigo} · {item.color}
+        <p className="text-3xl md:text-4xl font-black mt-2 text-slate-100 tracking-tight">
+          {nombreOrden(item)}
         </p>
-        <p className="text-xl text-slate-400 mt-1">{item.cantidad} piezas</p>
+        <p className="text-2xl md:text-3xl font-bold text-slate-300 mt-1">{item.color}</p>
+        <p className="text-xl font-semibold text-slate-400 mt-1">{item.cantidad} piezas</p>
 
         <div
           className={
-            "mt-6 font-mono tabular-nums text-7xl md:text-8xl font-bold tracking-wider " +
+            "mt-6 font-mono tabular-nums text-7xl md:text-9xl font-black tracking-wider " +
             (sobretiempo ? "text-red-400" : enPausa ? "text-amber-300" : "text-white")
           }
           aria-live="polite"
@@ -283,6 +287,11 @@ function formatHHMMSS(ms: number) {
 }
 function pad(n: number) {
   return n.toString().padStart(2, "0");
+}
+
+/** Texto principal del ítem: descripción si existe, si no el código. */
+function nombreOrden(item: LineaItem) {
+  return item.articulo.descripcion?.trim() || item.articulo.codigo;
 }
 
 function PausaDialog({
