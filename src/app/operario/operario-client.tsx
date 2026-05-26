@@ -259,7 +259,11 @@ function ItemEnCurso({
         <div
           className={
             "mt-6 font-mono tabular-nums text-7xl md:text-9xl font-black tracking-wider " +
-            (sobretiempo ? "text-red-400" : enPausa ? "text-amber-300" : "text-white")
+            (sobretiempo
+              ? "text-red-500 animate-[blink_1s_step-end_infinite]"
+              : enPausa
+                ? "text-amber-300"
+                : "text-yellow-400")
           }
           aria-live="polite"
         >

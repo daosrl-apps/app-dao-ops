@@ -63,3 +63,10 @@
   20%, 60% { transform: translateX(-8px); }
   40%, 80% { transform: translateX(8px); }
 }
+
+/* Blink del timer en sobretiempo — on/off duro de 1s para que llame la
+   atención sin marear. */
+@keyframes blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0.15; }
+}
