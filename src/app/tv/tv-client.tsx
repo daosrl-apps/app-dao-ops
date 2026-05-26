@@ -17,6 +17,7 @@
  * las filas suben un escalón con una animación CSS.
  */
 import * as React from "react";
+import { Droplets, Paintbrush } from "lucide-react";
 import type { LineaSnapshot, LineaItem } from "@/lib/linea";
 
 const POLL_MS = 2000;
@@ -107,6 +108,7 @@ function RowAnterior({ item, animar }: { item: LineaItem | null; animar: boolean
       </p>
       {item ? (
         <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
+          <TipoBadge tipo={item.tipo} />
           <span className="text-2xl md:text-3xl font-black tracking-tight">
             {item.cliente.nombre}
           </span>
@@ -114,7 +116,8 @@ function RowAnterior({ item, animar }: { item: LineaItem | null; animar: boolean
             {nombreOrden(item)}
           </span>
           <span className="text-base md:text-xl font-bold text-slate-500">
-            {item.cantidad} pzs · {item.color}
+            {item.cantidad} pzs
+            {item.tipo === "PINTURA" && ` · ${item.color}`}
           </span>
         </div>
       ) : (
@@ -188,13 +191,23 @@ function RowActual({
 
       <div className="mt-4 md:mt-6 grid grid-cols-1 md:grid-cols-[1fr_auto] gap-4 items-center">
         <div>
-          <p className="text-4xl md:text-5xl font-black tracking-tight leading-tight">
+          <TipoBadge tipo={item.tipo} grande />
+          <p className="text-4xl md:text-5xl font-black tracking-tight leading-tight mt-2">
             {item.cliente.nombre}
           </p>
           <p className="text-3xl md:text-4xl font-black tracking-tight mt-1 text-slate-100">
             {nombreOrden(item)}
           </p>
-          <p className="text-2xl md:text-3xl font-bold mt-1 text-slate-200">{item.color}</p>
+          {item.tipo === "PINTURA" ? (
+            <p className="text-2xl md:text-3xl font-bold mt-1 text-slate-200">{item.color}</p>
+          ) : (
+            item.piezasPorPercha != null &&
+            item.velocidadLavado != null && (
+              <p className="text-2xl md:text-3xl font-bold mt-1 text-slate-200">
+                {item.piezasPorPercha}/percha · {item.velocidadLavado} m/s
+              </p>
+            )
+          )}
           <p className="text-xl md:text-2xl font-semibold text-slate-300 mt-1">
             {item.cantidad} piezas
           </p>
@@ -238,14 +251,16 @@ function RowSiguiente({
       </p>
       {item ? (
         <div>
-          <p className="text-2xl md:text-3xl font-black tracking-tight leading-tight">
+          <TipoBadge tipo={item.tipo} />
+          <p className="text-2xl md:text-3xl font-black tracking-tight leading-tight mt-1">
             {item.cliente.nombre}
           </p>
           <p className="text-2xl md:text-3xl font-black tracking-tight text-slate-100">
             {nombreOrden(item)}
           </p>
           <p className="text-base md:text-lg font-bold text-slate-400 mt-1">
-            {item.cantidad} pzs · {item.color}
+            {item.cantidad} pzs
+            {item.tipo === "PINTURA" && ` · ${item.color}`}
           </p>
         </div>
       ) : (
@@ -279,4 +294,20 @@ function pad(n: number) {
 /** Texto principal: descripción si existe, si no el código. */
 function nombreOrden(item: LineaItem) {
   return item.articulo.descripcion?.trim() || item.articulo.codigo;
+}
+
+function TipoBadge({ tipo, grande }: { tipo: "LAVADO" | "PINTURA"; grande?: boolean }) {
+  const lavado = tipo === "LAVADO";
+  const size = grande ? "text-base md:text-lg px-3 py-1" : "text-sm px-2 py-0.5";
+  return (
+    <span
+      className={
+        `inline-flex items-center gap-2 rounded-full font-bold uppercase tracking-wide ${size} ` +
+        (lavado ? "bg-sky-200 text-sky-900" : "bg-violet-200 text-violet-900")
+      }
+    >
+      {lavado ? <Droplets className="h-4 w-4" /> : <Paintbrush className="h-4 w-4" />}
+      {lavado ? "Lavado" : "Pintura"}
+    </span>
+  );
 }

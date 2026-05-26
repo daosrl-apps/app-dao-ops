@@ -10,7 +10,7 @@
  */
 import * as React from "react";
 import Link from "next/link";
-import { Pause, Play, CheckCircle2, LogOut, Home } from "lucide-react";
+import { Pause, Play, CheckCircle2, LogOut, Home, Droplets, Paintbrush } from "lucide-react";
 import type { LineaSnapshot, LineaItem } from "@/lib/linea";
 
 const POLL_MS = 2000;
@@ -197,14 +197,20 @@ function ItemPendiente({
   return (
     <div className="text-center max-w-3xl w-full">
       <p className="uppercase tracking-wider text-slate-400 text-sm mb-2">Próxima orden</p>
-      <h1 className="text-5xl md:text-6xl font-black tracking-tight leading-tight mb-2">
+      <TipoBadge tipo={item.tipo} grande />
+      <h1 className="text-5xl md:text-6xl font-black tracking-tight leading-tight mt-3 mb-2">
         {item.cliente.nombre}
       </h1>
       <p className="text-3xl md:text-4xl font-black text-slate-100 tracking-tight mb-3">
         {nombreOrden(item)}
       </p>
       <p className="text-2xl font-bold text-slate-300 mb-8">
-        {item.cantidad} piezas · {item.color}
+        {item.cantidad} piezas
+        {item.tipo === "PINTURA" && ` · ${item.color}`}
+        {item.tipo === "LAVADO" &&
+          item.piezasPorPercha != null &&
+          item.velocidadLavado != null &&
+          ` · ${item.piezasPorPercha}/percha · ${item.velocidadLavado} m/s`}
       </p>
       <button
         onClick={onIniciar}
@@ -246,14 +252,26 @@ function ItemEnCurso({
   return (
     <div className="w-full max-w-4xl">
       <div className="rounded-3xl bg-black text-white border-4 border-emerald-500/30 p-8 shadow-2xl">
-        <p className="uppercase tracking-widest text-emerald-400 text-sm mb-3">En línea</p>
+        <div className="flex items-center gap-3 mb-3">
+          <p className="uppercase tracking-widest text-emerald-400 text-sm">En línea</p>
+          <TipoBadge tipo={item.tipo} grande />
+        </div>
         <h1 className="text-4xl md:text-6xl font-black tracking-tight leading-tight">
           {item.cliente.nombre}
         </h1>
         <p className="text-3xl md:text-4xl font-black mt-2 text-slate-100 tracking-tight">
           {nombreOrden(item)}
         </p>
-        <p className="text-2xl md:text-3xl font-bold text-slate-300 mt-1">{item.color}</p>
+        {item.tipo === "PINTURA" && (
+          <p className="text-2xl md:text-3xl font-bold text-slate-300 mt-1">{item.color}</p>
+        )}
+        {item.tipo === "LAVADO" &&
+          item.piezasPorPercha != null &&
+          item.velocidadLavado != null && (
+            <p className="text-2xl md:text-3xl font-bold text-slate-300 mt-1">
+              {item.piezasPorPercha}/percha · {item.velocidadLavado} m/s
+            </p>
+          )}
         <p className="text-xl font-semibold text-slate-400 mt-1">{item.cantidad} piezas</p>
 
         <div
@@ -296,6 +314,22 @@ function pad(n: number) {
 /** Texto principal del ítem: descripción si existe, si no el código. */
 function nombreOrden(item: LineaItem) {
   return item.articulo.descripcion?.trim() || item.articulo.codigo;
+}
+
+function TipoBadge({ tipo, grande }: { tipo: "LAVADO" | "PINTURA"; grande?: boolean }) {
+  const lavado = tipo === "LAVADO";
+  const size = grande ? "text-lg px-4 py-1.5" : "text-sm px-2.5 py-1";
+  return (
+    <span
+      className={
+        `inline-flex items-center gap-2 rounded-full font-bold uppercase tracking-wide ${size} ` +
+        (lavado ? "bg-sky-200 text-sky-900" : "bg-violet-200 text-violet-900")
+      }
+    >
+      {lavado ? <Droplets className="h-5 w-5" /> : <Paintbrush className="h-5 w-5" />}
+      {lavado ? "Lavado" : "Pintura"}
+    </span>
+  );
 }
 
 function PausaDialog({

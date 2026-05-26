@@ -21,9 +21,12 @@ const JornadaEnum = z.enum(["J_06_14", "J_14_22", "J_22_06", "J_06_18", "J_18_06
 
 const ItemSchema = z.object({
   articuloId: z.string().min(1),
+  /// Tipo explícito (preferido). Si no viene, cae al flag legacy `incluyeLavado`.
+  tipo: z.enum(["LAVADO", "PINTURA"]).optional(),
   color: z.string().min(1),
   cantidad: z.number().int().positive(),
-  incluyeLavado: z.boolean(),
+  /// Legacy: si tipo no vino y este flag es true, se interpreta como LAVADO.
+  incluyeLavado: z.boolean().optional(),
   piezasPorPercha: z.number().int().min(1).max(10).nullable().optional(),
   velocidadLavado: z.number().min(0.1).max(3.0).nullable().optional(),
 });
@@ -76,28 +79,83 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
-    if (i.incluyeLavado && (i.piezasPorPercha == null || i.velocidadLavado == null)) {
+    const esLavado = i.tipo === "LAVADO" || (i.tipo == null && i.incluyeLavado);
+    if (esLavado && (i.piezasPorPercha == null || i.velocidadLavado == null)) {
       return NextResponse.json(
-        { error: "Items con lavado requieren piezasPorPercha y velocidadLavado" },
+        { error: "Items de lavado requieren piezasPorPercha y velocidadLavado" },
         { status: 400 },
       );
     }
   }
 
   const inicioDate = new Date(inicio);
-  const planInputs = items.map((it, idx) => {
+
+  // Resolución de tipo por ítem:
+  //  - Si viene `tipo` explícito (wizard nuevo): se usa tal cual.
+  //  - Si no viene y `incluyeLavado` está, se desdobla en LAVADO + PINTURA
+  //    (compatibilidad con clientes viejos).
+  //  - Si nada de eso, default = PINTURA.
+  type SubItem = {
+    articuloId: string;
+    tipo: "LAVADO" | "PINTURA";
+    color: string;
+    cantidad: number;
+    piezasPorHora: number;
+    configPerchas: string | null;
+    piezasPorPercha: number | null;
+    velocidadLavado: number | null;
+  };
+  const subItems: SubItem[] = [];
+  for (const it of items) {
     const a = articuloMap.get(it.articuloId)!;
-    return {
-      index: idx,
+    if (it.tipo) {
+      subItems.push({
+        articuloId: it.articuloId,
+        tipo: it.tipo,
+        color: it.color,
+        cantidad: it.cantidad,
+        piezasPorHora: a.piezasPorHora,
+        configPerchas: a.configPerchas,
+        piezasPorPercha: it.tipo === "LAVADO" ? (it.piezasPorPercha ?? null) : null,
+        velocidadLavado: it.tipo === "LAVADO" ? (it.velocidadLavado ?? null) : null,
+      });
+      continue;
+    }
+    // Camino legacy.
+    if (it.incluyeLavado) {
+      subItems.push({
+        articuloId: it.articuloId,
+        tipo: "LAVADO",
+        color: it.color,
+        cantidad: it.cantidad,
+        piezasPorHora: a.piezasPorHora,
+        configPerchas: a.configPerchas,
+        piezasPorPercha: it.piezasPorPercha ?? null,
+        velocidadLavado: it.velocidadLavado ?? null,
+      });
+    }
+    subItems.push({
+      articuloId: it.articuloId,
+      tipo: "PINTURA",
+      color: it.color,
       cantidad: it.cantidad,
       piezasPorHora: a.piezasPorHora,
-      color: it.color,
       configPerchas: a.configPerchas,
-      incluyeLavado: it.incluyeLavado,
-      piezasPorPercha: it.piezasPorPercha ?? null,
-      velocidadLavado: it.velocidadLavado ?? null,
-    };
-  });
+      piezasPorPercha: null,
+      velocidadLavado: null,
+    });
+  }
+
+  const planInputs = subItems.map((s, idx) => ({
+    index: idx,
+    tipo: s.tipo,
+    cantidad: s.cantidad,
+    piezasPorHora: s.piezasPorHora,
+    color: s.color,
+    configPerchas: s.configPerchas,
+    piezasPorPercha: s.piezasPorPercha,
+    velocidadLavado: s.velocidadLavado,
+  }));
   const schedule = planificarItems(planInputs, inicioDate);
 
   const pcp = await prisma.pcp.create({
@@ -107,17 +165,20 @@ export async function POST(req: NextRequest) {
       ordenManual,
       creadoPorId: auth.claims.sub,
       items: {
-        create: items.map((it, idx) => {
-          const a = articuloMap.get(it.articuloId)!;
+        create: subItems.map((s, idx) => {
           const sch = schedule[idx];
           return {
-            articuloId: it.articuloId,
-            color: it.color,
-            cantidad: it.cantidad,
-            incluyeLavado: it.incluyeLavado,
-            piezasPorPercha: it.piezasPorPercha ?? null,
-            velocidadLavado: it.velocidadLavado ?? null,
-            configPerchas: a.configPerchas ?? null,
+            articuloId: s.articuloId,
+            tipo: s.tipo,
+            color: s.color,
+            cantidad: s.cantidad,
+            // Legacy flag: marcamos true en la mitad PINTURA solo si vino
+            // acoplada (para trazabilidad). En el modelo nuevo el dato
+            // operativo es el `tipo`.
+            incluyeLavado: false,
+            piezasPorPercha: s.piezasPorPercha,
+            velocidadLavado: s.velocidadLavado,
+            configPerchas: s.configPerchas,
             orden: idx,
             inicioTeorico: sch.inicio,
             finTeorico: sch.fin,

@@ -72,6 +72,7 @@ export function tiempoLavadoSeg(
 // =============================================================================
 
 export interface ItemParaCambio {
+  tipo: ItemTipo;
   color: string;
   /** Identificador de configuración de perchas. Null/undefined = "sin info";
    *  dos ítems con el mismo valor no disparan cambio de perchas. */
@@ -79,13 +80,20 @@ export interface ItemParaCambio {
 }
 
 /**
- * Devuelve los segundos de cambio entre `anterior` y `siguiente`:
- *  - cambio de color → 30 min
- *  - cambio de perchas → 45 min
- *  - ambos → solo el mayor (NO suma) → 45 min
- *  - ninguno → 0
+ * Tiempo de cambio entre `anterior` y `siguiente`:
+ *  - Solo aplica si AMBOS ítems son PINTURA. Entre LAVADO no hay cambios (es
+ *    una sola línea de lavado, contínua), y al pasar de LAVADO a PINTURA
+ *    estamos cambiando de estación física: tampoco se contabiliza como cambio
+ *    de la línea de pintura.
+ *  - Entre PINTURA y PINTURA:
+ *      - cambio de color → 30 min
+ *      - cambio de perchas → 45 min
+ *      - ambos → solo el mayor (NO suma) → 45 min
+ *      - ninguno → 0
  */
 export function tiempoCambioSeg(anterior: ItemParaCambio, siguiente: ItemParaCambio): number {
+  if (anterior.tipo !== "PINTURA" || siguiente.tipo !== "PINTURA") return 0;
+
   const cambiaColor = normalizarColor(anterior.color) !== normalizarColor(siguiente.color);
   const cambiaPerchas =
     normalizarPerchas(anterior.configPerchas) !== normalizarPerchas(siguiente.configPerchas);
@@ -108,12 +116,18 @@ function normalizarPerchas(c: string | null | undefined): string {
 // Duración total de un ítem (lavado + pintura)
 // =============================================================================
 
+export type ItemTipo = "LAVADO" | "PINTURA";
+
 export interface ItemCalculable {
+  /// LAVADO o PINTURA — define qué etapa cubre el ítem.
+  tipo: ItemTipo;
   cantidadPiezas: number;
+  /// Aplica a PINTURA. Si tipo=LAVADO se ignora.
   piezasPorHora: number;
-  incluyeLavado: boolean;
+  /// Aplican a LAVADO. Si tipo=PINTURA se ignoran.
   piezasPorPercha?: number | null;
   velocidadLavado?: number | null;
+  /// Aplica a PINTURA. En LAVADO no hay color (es lavado de piezas crudas).
   color: string;
   configPerchas?: string | null;
 }
@@ -121,20 +135,24 @@ export interface ItemCalculable {
 export interface DuracionItem {
   pinturaSeg: number;
   lavadoSeg: number;
-  /** Total = lavado + pintura (sin contar tiempo de cambio). */
+  /** Total del ítem (solo una etapa: o lavado o pintura). */
   totalSeg: number;
 }
 
 export function duracionItem(item: ItemCalculable): DuracionItem {
-  const pinturaSeg = tiempoPinturaSeg(item.cantidadPiezas, item.piezasPorHora);
-  let lavadoSeg = 0;
-  if (item.incluyeLavado) {
+  if (item.tipo === "LAVADO") {
     if (item.piezasPorPercha == null || item.velocidadLavado == null) {
-      throw new Error("Item con lavado requiere piezasPorPercha y velocidadLavado");
+      throw new Error("Item LAVADO requiere piezasPorPercha y velocidadLavado");
     }
-    lavadoSeg = tiempoLavadoSeg(item.cantidadPiezas, item.piezasPorPercha, item.velocidadLavado);
+    const lavadoSeg = tiempoLavadoSeg(
+      item.cantidadPiezas,
+      item.piezasPorPercha,
+      item.velocidadLavado,
+    );
+    return { pinturaSeg: 0, lavadoSeg, totalSeg: lavadoSeg };
   }
-  return { pinturaSeg, lavadoSeg, totalSeg: pinturaSeg + lavadoSeg };
+  const pinturaSeg = tiempoPinturaSeg(item.cantidadPiezas, item.piezasPorHora);
+  return { pinturaSeg, lavadoSeg: 0, totalSeg: pinturaSeg };
 }
 
 // =============================================================================
@@ -191,23 +209,23 @@ export function planificar(items: ItemPlan[], inicioJornada: Date): ItemSchedule
 
 /**
  * Devuelve los índices del orden propuesto:
- *  1) Ítems con lavado primero.
- *  2) Agrupar por color (mismo color consecutivo).
- *  3) Dentro del grupo "con lavado" y "sin lavado", minimizar tiempo total
- *     de cambios entre ítems consecutivos.
+ *  1) Todos los LAVADO primero, después todos los PINTURA. La regla de negocio
+ *     dice que conviene agrupar los lavados al inicio y después pintar.
+ *  2) Dentro de PINTURA: minimizar tiempo total de cambios (color + perchas).
+ *  3) Dentro de LAVADO: no hay cambios entre lavados, pero por consistencia
+ *     respetamos el orden del input.
  *
- * Estrategia: como suelen ser <=5 ítems, hacemos búsqueda exhaustiva (5! = 120
- * permutaciones) — barata y garantiza óptimo dentro del grupo.
- *
- * Para PCPs más grandes (hipotéticamente >8 ítems) cae a un heurístico greedy
- * "nearest neighbor por color/perchas".
+ * Estrategia: hasta 7 ítems en un grupo → búsqueda exhaustiva (7! = 5040, OK).
+ * A partir de ahí → heurístico greedy "nearest neighbor".
  */
 export function proponerOrdenOptimo(items: ItemPlan[]): number[] {
-  const conLavado = items.filter((i) => i.incluyeLavado);
-  const sinLavado = items.filter((i) => !i.incluyeLavado);
-  const ordenConLavado = ordenarGrupo(conLavado);
-  const ordenSinLavado = ordenarGrupo(sinLavado);
-  return [...ordenConLavado, ...ordenSinLavado];
+  const lavados = items.filter((i) => i.tipo === "LAVADO");
+  const pinturas = items.filter((i) => i.tipo === "PINTURA");
+  // En LAVADO no hay tiempo de cambio entre items, así que cualquier orden
+  // tiene el mismo costo. Mantenemos el orden del input.
+  const ordenLavados = lavados.map((l) => l.index);
+  const ordenPinturas = ordenarGrupo(pinturas);
+  return [...ordenLavados, ...ordenPinturas];
 }
 
 function ordenarGrupo(grupo: ItemPlan[]): number[] {

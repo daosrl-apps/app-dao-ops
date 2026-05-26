@@ -169,9 +169,11 @@ async function cargarVentana(inicio: Date, fin: Date): Promise<VentanaData> {
     let prevColor: string | null = null;
     let prevPerchas: string | null = null;
     for (const it of pcp.items) {
+      // "Piezas pintadas" cuenta solo PINTURA. "Piezas lavadas" cuenta LAVADO.
+      // El artículo se cuenta una vez por tipo de ítem.
       if (it.estado === "FINALIZADO" && it.inicioReal && it.finReal) {
-        piezasPintadas += it.cantidad;
-        if (it.incluyeLavado) piezasLavadas += it.cantidad;
+        if (it.tipo === "PINTURA") piezasPintadas += it.cantidad;
+        if (it.tipo === "LAVADO") piezasLavadas += it.cantidad;
 
         const dTeo = (it.finTeorico.getTime() - it.inicioTeorico.getTime()) / 1000;
         const dReal = (it.finReal.getTime() - it.inicioReal.getTime()) / 1000;
@@ -181,20 +183,31 @@ async function cargarVentana(inicio: Date, fin: Date): Promise<VentanaData> {
           finReal: it.finReal,
           cliente: it.articulo.cliente.nombre,
           articulo: it.articulo.codigo,
-          color: it.color,
+          color: it.tipo === "PINTURA" ? it.color : "(lavado)",
           cantidad: it.cantidad,
           duracionTeoricaSeg: dTeo,
           duracionRealSeg: dReal,
         });
       }
 
-      items.push({ color: it.color, cliente: it.articulo.cliente.nombre, cantidad: it.cantidad });
+      // Para el pie de "piezas por color" solo cuentan PINTURA.
+      if (it.tipo === "PINTURA") {
+        items.push({
+          color: it.color,
+          cliente: it.articulo.cliente.nombre,
+          cantidad: it.cantidad,
+        });
+      }
 
-      if (prevColor !== null && prevColor !== it.color) cambiosColor++;
-      const perchasActuales = it.configPerchas ?? "";
-      if (prevPerchas !== null && prevPerchas !== perchasActuales) cambiosPercha++;
-      prevColor = it.color;
-      prevPerchas = perchasActuales;
+      // Cambios de color y perchas solo se computan entre items PINTURA
+      // consecutivos (los LAVADO ocurren en otra estación).
+      if (it.tipo === "PINTURA") {
+        if (prevColor !== null && prevColor !== it.color) cambiosColor++;
+        const perchasActuales = it.configPerchas ?? "";
+        if (prevPerchas !== null && prevPerchas !== perchasActuales) cambiosPercha++;
+        prevColor = it.color;
+        prevPerchas = perchasActuales;
+      }
     }
   }
 

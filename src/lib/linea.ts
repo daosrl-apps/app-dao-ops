@@ -14,9 +14,12 @@ export interface LineaItem {
   pcpId: string;
   orden: number;
   estado: string;
+  tipo: "LAVADO" | "PINTURA";
   color: string;
   cantidad: number;
   incluyeLavado: boolean;
+  piezasPorPercha: number | null;
+  velocidadLavado: number | null;
   inicioTeorico: string;
   finTeorico: string;
   /// Duración teórica en segundos (precalculada para el cliente).
@@ -69,9 +72,12 @@ function shapeItem(
     pcpId: it.pcpId,
     orden: it.orden,
     estado: it.estado,
+    tipo: it.tipo,
     color: it.color,
     cantidad: it.cantidad,
     incluyeLavado: it.incluyeLavado,
+    piezasPorPercha: it.piezasPorPercha,
+    velocidadLavado: it.velocidadLavado,
     inicioTeorico: it.inicioTeorico.toISOString(),
     finTeorico: it.finTeorico.toISOString(),
     duracionTeoricaSeg: Math.round((it.finTeorico.getTime() - it.inicioTeorico.getTime()) / 1000),

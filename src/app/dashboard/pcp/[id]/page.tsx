@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/auth-guards";
+import { PcpDetailClient, type ItemView } from "./pcp-detail-client";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +10,7 @@ export default async function PcpDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireSession();
+  const claims = await requireSession();
   const { id } = await params;
 
   const pcp = await prisma.pcp.findUnique({
@@ -25,66 +26,34 @@ export default async function PcpDetailPage({
 
   if (!pcp) notFound();
 
-  return (
-    <section className="mx-auto w-full max-w-5xl p-6">
-      <h1 className="text-3xl font-bold text-slate-800 mb-2">
-        PCP del{" "}
-        {pcp.inicio.toLocaleDateString("es-AR", {
-          weekday: "long",
-          day: "2-digit",
-          month: "long",
-        })}
-      </h1>
-      <p className="text-slate-600 mb-6">
-        Inicio teórico:{" "}
-        <b>
-          {pcp.inicio.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}
-        </b>{" "}
-        · creado por {pcp.creadoPor.name} · {pcp.items.length} ítem(s)
-      </p>
+  const items: ItemView[] = pcp.items.map((it) => ({
+    id: it.id,
+    orden: it.orden,
+    tipo: it.tipo,
+    estado: it.estado,
+    color: it.color,
+    cantidad: it.cantidad,
+    piezasPorPercha: it.piezasPorPercha,
+    velocidadLavado: it.velocidadLavado,
+    inicioTeorico: it.inicioTeorico.toISOString(),
+    finTeorico: it.finTeorico.toISOString(),
+    inicioReal: it.inicioReal?.toISOString() ?? null,
+    finReal: it.finReal?.toISOString() ?? null,
+    articulo: {
+      codigo: it.articulo.codigo,
+      descripcion: it.articulo.descripcion,
+      cliente: { nombre: it.articulo.cliente.nombre },
+    },
+  }));
 
-      <ol className="space-y-3">
-        {pcp.items.map((it, idx) => (
-          <li
-            key={it.id}
-            className="rounded-2xl bg-white shadow-sm border border-slate-200 p-5"
-          >
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <div>
-                <p className="text-xs uppercase tracking-wider text-slate-500">
-                  #{idx + 1} · {it.articulo.cliente.nombre}
-                </p>
-                <p className="text-2xl font-black text-slate-900 tracking-tight mt-0.5">
-                  {it.articulo.descripcion?.trim() || it.articulo.codigo}
-                </p>
-                <p className="text-sm font-medium text-slate-600 mt-1">
-                  {it.cantidad} pzs · {it.color}
-                  {it.incluyeLavado &&
-                    ` · lavado ${it.piezasPorPercha}/percha @ ${it.velocidadLavado} m/s`}
-                </p>
-              </div>
-              <p className="text-sm text-slate-600">
-                <b>
-                  {it.inicioTeorico.toLocaleTimeString("es-AR", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </b>{" "}
-                →{" "}
-                <b>
-                  {it.finTeorico.toLocaleTimeString("es-AR", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </b>
-              </p>
-            </div>
-            <p className="mt-2 text-xs uppercase tracking-wide text-slate-500">
-              Estado: {it.estado}
-            </p>
-          </li>
-        ))}
-      </ol>
-    </section>
+  return (
+    <PcpDetailClient
+      pcpId={pcp.id}
+      inicio={pcp.inicio.toISOString()}
+      creadoPor={pcp.creadoPor.name}
+      ordenManual={pcp.ordenManual}
+      items={items}
+      puedeEditar={claims.role === "SUPERVISOR" || claims.role === "ADMIN"}
+    />
   );
 }

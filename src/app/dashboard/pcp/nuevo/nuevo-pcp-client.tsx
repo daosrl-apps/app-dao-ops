@@ -3,12 +3,11 @@
 /**
  * Wizard de creación de PCP (2 pasos):
  *  1. Fecha + jornada.
- *  2. Carga de ítems con autocomplete + reordenamiento.
+ *  2. Carga de sub-ítems (LAVADO / PINTURA) con autocomplete + reordenamiento.
  *
- * Reordenamiento: usamos botones ↑/↓ (más confiables en tablet que el drag &
- * drop táctil nativo del navegador, y suficientes para ≤8 ítems). En cuanto el
- * supervisor mueve un ítem manualmente, `ordenManual` queda en true y el
- * sistema deja de proponer reorden.
+ * Cada card representa un sub-ítem. Items "con lavado" se cargan como dos
+ * sub-ítems separados (LAVADO + PINTURA). El optimizer agrupa todos los
+ * LAVADO primero y después los PINTURA.
  */
 import * as React from "react";
 import { useRouter } from "next/navigation";
@@ -16,6 +15,8 @@ import {
   ArrowDown,
   ArrowUp,
   Check,
+  Droplets,
+  Paintbrush,
   Pencil,
   Plus,
   Trash2,
@@ -25,10 +26,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { proponerOrdenOptimo, type ItemPlan } from "@/lib/schedule";
-import { planificar } from "@/lib/schedule";
+import { proponerOrdenOptimo, planificar, type ItemPlan } from "@/lib/schedule";
 
 type Jornada = "J_06_14" | "J_14_22" | "J_22_06" | "J_06_18" | "J_18_06";
+type Tipo = "LAVADO" | "PINTURA";
 
 const JORNADAS: { value: Jornada; label: string; horaInicio: number }[] = [
   { value: "J_06_14", label: "6 a 14 hs", horaInicio: 6 },
@@ -39,35 +40,11 @@ const JORNADAS: { value: Jornada; label: string; horaInicio: number }[] = [
 ];
 
 const CATALOGO_COLORES = [
-  "Aluminio",
-  "Amarillo",
-  "Amarillo maíz",
-  "Azul",
-  "Beige",
-  "Blanco",
-  "Blanco brillante",
-  "Estrellita",
-  "Fluor naranja",
-  "Fluor rosa",
-  "Fluor verde",
-  "Galv / galvanizado",
-  "Grafito",
-  "Gris",
-  "Gris Shell",
-  "Gris Stara",
-  "Gris topo",
-  "Marrón",
-  "Naranja",
-  "Negro",
-  "Negro tex",
-  "Negro texturado",
-  "Negro s/mate",
-  "Ocre",
-  "Platil",
-  "Rojo",
-  "Rosa",
-  "Shell",
-  "Verde",
+  "Aluminio", "Amarillo", "Amarillo maíz", "Azul", "Beige", "Blanco",
+  "Blanco brillante", "Estrellita", "Fluor naranja", "Fluor rosa", "Fluor verde",
+  "Galv / galvanizado", "Grafito", "Gris", "Gris Shell", "Gris Stara",
+  "Gris topo", "Marrón", "Naranja", "Negro", "Negro tex", "Negro texturado",
+  "Negro s/mate", "Ocre", "Platil", "Rojo", "Rosa", "Shell", "Verde",
 ];
 
 interface Cliente {
@@ -85,7 +62,8 @@ interface Articulo {
   cliente: { id: string; nombre: string };
 }
 
-interface ItemBorrador {
+interface SubItemBorrador {
+  tipo: Tipo;
   clienteId: string;
   clienteNombre: string;
   articuloId: string;
@@ -95,7 +73,7 @@ interface ItemBorrador {
   configPerchas: string | null;
   color: string;
   cantidad: number;
-  incluyeLavado: boolean;
+  // Solo aplican a LAVADO.
   piezasPorPercha: number;
   velocidadLavado: number;
 }
@@ -105,7 +83,7 @@ export function NuevoPcpClient() {
   const [paso, setPaso] = React.useState<1 | 2>(1);
   const [fecha, setFecha] = React.useState<string>(() => new Date().toISOString().slice(0, 10));
   const [jornada, setJornada] = React.useState<Jornada>("J_06_14");
-  const [items, setItems] = React.useState<ItemBorrador[]>([]);
+  const [items, setItems] = React.useState<SubItemBorrador[]>([]);
   const [ordenManual, setOrdenManual] = React.useState(false);
   const [editandoIdx, setEditandoIdx] = React.useState<number | null>(null);
   const [creando, setCreando] = React.useState(false);
@@ -118,34 +96,29 @@ export function NuevoPcpClient() {
     return new Date(y, m - 1, d, horaInicio, 0, 0, 0);
   }, [fecha, jornada]);
 
+  const buildPlan = React.useCallback(
+    (arr: SubItemBorrador[]): ItemPlan[] =>
+      arr.map((it, idx) => ({
+        index: idx,
+        tipo: it.tipo,
+        cantidadPiezas: it.cantidad,
+        piezasPorHora: it.piezasPorHora,
+        color: it.color,
+        configPerchas: it.configPerchas,
+        piezasPorPercha: it.tipo === "LAVADO" ? it.piezasPorPercha : null,
+        velocidadLavado: it.tipo === "LAVADO" ? it.velocidadLavado : null,
+      })),
+    [],
+  );
+
   const schedule = React.useMemo(() => {
     if (items.length === 0) return [];
-    const plan: ItemPlan[] = items.map((it, idx) => ({
-      index: idx,
-      cantidadPiezas: it.cantidad,
-      piezasPorHora: it.piezasPorHora,
-      color: it.color,
-      configPerchas: it.configPerchas,
-      incluyeLavado: it.incluyeLavado,
-      piezasPorPercha: it.incluyeLavado ? it.piezasPorPercha : null,
-      velocidadLavado: it.incluyeLavado ? it.velocidadLavado : null,
-    }));
-    return planificar(plan, inicioDate);
-  }, [items, inicioDate]);
+    return planificar(buildPlan(items), inicioDate);
+  }, [items, inicioDate, buildPlan]);
 
   const aplicarOptimizador = () => {
     if (items.length < 2) return;
-    const plan: ItemPlan[] = items.map((it, idx) => ({
-      index: idx,
-      cantidadPiezas: it.cantidad,
-      piezasPorHora: it.piezasPorHora,
-      color: it.color,
-      configPerchas: it.configPerchas,
-      incluyeLavado: it.incluyeLavado,
-      piezasPorPercha: it.incluyeLavado ? it.piezasPorPercha : null,
-      velocidadLavado: it.incluyeLavado ? it.velocidadLavado : null,
-    }));
-    const orden = proponerOrdenOptimo(plan);
+    const orden = proponerOrdenOptimo(buildPlan(items));
     setItems((curr) => orden.map((i) => curr[i]));
     setOrdenManual(false);
   };
@@ -164,43 +137,55 @@ export function NuevoPcpClient() {
     setItems((curr) => curr.filter((_, idx) => idx !== i));
   };
 
-  const upsertItem = (nuevo: ItemBorrador) => {
-    setItems((curr) => {
-      if (editandoIdx !== null) {
-        const next = [...curr];
-        next[editandoIdx] = nuevo;
-        return next;
+  /**
+   * Agrega 1 o 2 sub-ítems según el flag `tambienOtroTipo`. Si vino PINTURA
+   * con flag, suma además un LAVADO equivalente; si vino LAVADO con flag,
+   * suma además un PINTURA.
+   */
+  const sumarItems = (base: SubItemBorrador, tambienOtroTipo: boolean) => {
+    const nuevos: SubItemBorrador[] = [];
+    if (tambienOtroTipo) {
+      const otroTipo: Tipo = base.tipo === "LAVADO" ? "PINTURA" : "LAVADO";
+      // Por convención, el LAVADO va primero en el alta.
+      if (otroTipo === "LAVADO") {
+        nuevos.push({ ...base, tipo: "LAVADO" });
+        nuevos.push(base);
+      } else {
+        nuevos.push(base);
+        nuevos.push({ ...base, tipo: "PINTURA" });
       }
-      return [...curr, nuevo];
-    });
-    setEditandoIdx(null);
+    } else {
+      nuevos.push(base);
+    }
+    setItems((curr) => [...curr, ...nuevos]);
     setCreando(false);
-    // Si el usuario no había reordenado a mano, re-optimizamos al sumar/editar.
     if (!ordenManual) {
-      // Re-aplicar optimizador en el próximo render via effect.
       queueMicrotask(() => {
         setItems((curr) => {
           if (curr.length < 2) return curr;
-          const plan: ItemPlan[] = curr.map((it, idx) => ({
-            index: idx,
-            cantidadPiezas: it.cantidad,
-            piezasPorHora: it.piezasPorHora,
-            color: it.color,
-            configPerchas: it.configPerchas,
-            incluyeLavado: it.incluyeLavado,
-            piezasPorPercha: it.incluyeLavado ? it.piezasPorPercha : null,
-            velocidadLavado: it.incluyeLavado ? it.velocidadLavado : null,
-          }));
-          const orden = proponerOrdenOptimo(plan);
+          const orden = proponerOrdenOptimo(buildPlan(curr));
           return orden.map((i) => curr[i]);
         });
       });
     }
   };
 
+  const editarItem = (idx: number, nuevo: SubItemBorrador) => {
+    setItems((curr) => {
+      const next = [...curr];
+      next[idx] = nuevo;
+      return next;
+    });
+    setEditandoIdx(null);
+  };
+
   const finalizar = async () => {
     setSubmitting(true);
     setError(null);
+    // El backend acepta items con incluyeLavado. Acá ya vienen como sub-ítems
+    // separados, así que mandamos cada uno como un item con `incluyeLavado=false`
+    // y, en caso de LAVADO, los datos de lavado + cantidad. El POST /api/pcp
+    // genera un row por cada sub-ítem y lo persiste con su tipo.
     const body = {
       inicio: inicioDate.toISOString(),
       jornada,
@@ -209,9 +194,13 @@ export function NuevoPcpClient() {
         articuloId: it.articuloId,
         color: it.color,
         cantidad: it.cantidad,
-        incluyeLavado: it.incluyeLavado,
-        piezasPorPercha: it.incluyeLavado ? it.piezasPorPercha : null,
-        velocidadLavado: it.incluyeLavado ? it.velocidadLavado : null,
+        // Trick: si tipo=LAVADO, mandamos incluyeLavado=true y los datos del
+        // lavado; el server crea el ítem LAVADO. Si tipo=PINTURA, mandamos
+        // incluyeLavado=false: el server crea solo el ítem PINTURA.
+        incluyeLavado: it.tipo === "LAVADO",
+        piezasPorPercha: it.tipo === "LAVADO" ? it.piezasPorPercha : null,
+        velocidadLavado: it.tipo === "LAVADO" ? it.velocidadLavado : null,
+        soloLavado: it.tipo === "LAVADO",
       })),
     };
     const res = await fetch("/api/pcp", {
@@ -270,7 +259,6 @@ export function NuevoPcpClient() {
     );
   }
 
-  // Paso 2
   return (
     <section className="mx-auto w-full max-w-5xl p-6">
       <div className="flex items-center justify-between mb-6">
@@ -291,7 +279,6 @@ export function NuevoPcpClient() {
         </Button>
       </div>
 
-      {/* Lista de ítems cargados */}
       <div className="space-y-3 mb-6">
         {items.map((it, idx) => (
           <ItemCard
@@ -317,7 +304,7 @@ export function NuevoPcpClient() {
             onClick={() => setCreando(true)}
             size="lg"
             className="bg-[#1627b1] text-white"
-            disabled={items.length >= 8}
+            disabled={items.length >= 12}
           >
             <Plus className="h-5 w-5 mr-2" /> Agregar ítem
           </Button>
@@ -326,21 +313,30 @@ export function NuevoPcpClient() {
             variant="outline"
             size="lg"
             disabled={items.length < 2}
-            title="Reordena agrupando por color y minimizando cambios"
+            title="Agrupa todos los LAVADO primero, después PINTURA optimizando cambios"
           >
             <Wand2 className="h-5 w-5 mr-2" /> Proponer orden óptimo
           </Button>
         </div>
       )}
 
-      {(creando || editandoIdx !== null) && (
+      {creando && (
         <ItemForm
-          inicial={editandoIdx !== null ? items[editandoIdx] : null}
-          onCancel={() => {
-            setEditandoIdx(null);
-            setCreando(false);
-          }}
-          onSave={upsertItem}
+          modo="alta"
+          inicial={null}
+          onCancel={() => setCreando(false)}
+          onSaveAlta={sumarItems}
+          onSaveEdicion={() => {}}
+        />
+      )}
+
+      {editandoIdx !== null && (
+        <ItemForm
+          modo="edicion"
+          inicial={items[editandoIdx]}
+          onCancel={() => setEditandoIdx(null)}
+          onSaveAlta={() => {}}
+          onSaveEdicion={(it) => editarItem(editandoIdx, it)}
         />
       )}
 
@@ -390,7 +386,7 @@ function ItemCard({
   onEdit,
   onDelete,
 }: {
-  item: ItemBorrador;
+  item: SubItemBorrador;
   schedule?: { inicio: Date; fin: Date; cambioSeg: number };
   isFirst: boolean;
   isLast: boolean;
@@ -399,6 +395,7 @@ function ItemCard({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const isLavado = item.tipo === "LAVADO";
   return (
     <div className="flex items-stretch rounded-2xl bg-white shadow-sm border border-slate-200 overflow-hidden">
       <div className="flex flex-col bg-slate-50 border-r border-slate-200">
@@ -420,20 +417,39 @@ function ItemCard({
         </button>
       </div>
       <div className="flex-1 p-4">
-        <p className="text-xs uppercase tracking-wider text-slate-500">{item.clienteNombre}</p>
+        <div className="flex items-center gap-2 mb-1">
+          <span
+            className={
+              "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold uppercase tracking-wide " +
+              (isLavado
+                ? "bg-sky-100 text-sky-800"
+                : "bg-violet-100 text-violet-800")
+            }
+          >
+            {isLavado ? <Droplets className="h-3 w-3" /> : <Paintbrush className="h-3 w-3" />}
+            {isLavado ? "Lavado" : "Pintura"}
+          </span>
+          <span className="text-xs uppercase tracking-wider text-slate-500">
+            {item.clienteNombre}
+          </span>
+        </div>
         <p className="text-xl font-black tracking-tight text-slate-900 leading-tight">
           {item.articuloDescripcion?.trim() || item.articuloCodigo}
         </p>
         <div className="mt-1 text-sm text-slate-600 flex flex-wrap gap-x-3 gap-y-1">
           <span>
-            <b>{item.cantidad}</b> piezas · <b>{item.color}</b>
+            <b>{item.cantidad}</b> piezas
+            {!isLavado && (
+              <>
+                {" "}
+                · <b>{item.color}</b>
+              </>
+            )}
           </span>
-          {item.incluyeLavado ? (
+          {isLavado && (
             <span>
-              Lavado: {item.piezasPorPercha}/percha · {item.velocidadLavado} m/s
+              {item.piezasPorPercha}/percha · {item.velocidadLavado} m/s
             </span>
-          ) : (
-            <span>Sin lavado</span>
           )}
         </div>
         {schedule && (
@@ -476,18 +492,23 @@ function ItemCard({
 }
 
 // =============================================================================
-// ItemForm (alta/edición de un ítem con autocomplete)
+// ItemForm
 // =============================================================================
 
 function ItemForm({
+  modo,
   inicial,
   onCancel,
-  onSave,
+  onSaveAlta,
+  onSaveEdicion,
 }: {
-  inicial: ItemBorrador | null;
+  modo: "alta" | "edicion";
+  inicial: SubItemBorrador | null;
   onCancel: () => void;
-  onSave: (it: ItemBorrador) => void;
+  onSaveAlta: (base: SubItemBorrador, tambienOtroTipo: boolean) => void;
+  onSaveEdicion: (it: SubItemBorrador) => void;
 }) {
+  const [tipo, setTipo] = React.useState<Tipo>(inicial?.tipo ?? "PINTURA");
   const [cliente, setCliente] = React.useState<Cliente | null>(
     inicial ? { id: inicial.clienteId, nombre: inicial.clienteNombre } : null,
   );
@@ -496,17 +517,14 @@ function ItemForm({
   const [cantidad, setCantidad] = React.useState<string>(
     inicial ? String(inicial.cantidad) : "",
   );
-  const [incluyeLavado, setIncluyeLavado] = React.useState<boolean>(
-    inicial?.incluyeLavado ?? true,
-  );
   const [piezasPorPercha, setPiezasPorPercha] = React.useState<number>(
     inicial?.piezasPorPercha ?? 1,
   );
   const [velocidadLavado, setVelocidadLavado] = React.useState<number>(
     inicial?.velocidadLavado ?? 1.0,
   );
+  const [tambienOtroTipo, setTambienOtroTipo] = React.useState<boolean>(modo === "alta");
 
-  // Pre-cargar el articulo si estamos editando.
   React.useEffect(() => {
     if (inicial && !articulo) {
       fetch(`/api/admin/articulos?clienteId=${inicial.clienteId}`)
@@ -523,7 +541,8 @@ function ItemForm({
     if (!cliente || !articulo) return;
     const c = Number(cantidad);
     if (!Number.isFinite(c) || c <= 0) return;
-    onSave({
+    const base: SubItemBorrador = {
+      tipo,
       clienteId: cliente.id,
       clienteNombre: cliente.nombre,
       articuloId: articulo.id,
@@ -533,19 +552,51 @@ function ItemForm({
       configPerchas: articulo.configPerchas,
       color: color || articulo.color,
       cantidad: Math.trunc(c),
-      incluyeLavado,
       piezasPorPercha,
       velocidadLavado,
-    });
+    };
+    if (modo === "alta") onSaveAlta(base, tambienOtroTipo);
+    else onSaveEdicion(base);
   };
 
   return (
     <div className="mb-6 rounded-2xl bg-white shadow-sm border border-slate-200 p-5">
       <h2 className="text-xl font-semibold text-slate-800 mb-4">
-        {inicial ? "Editar ítem" : "Nuevo ítem"}
+        {modo === "edicion" ? "Editar ítem" : "Nuevo ítem"}
       </h2>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="md:col-span-2 flex gap-2">
+          <button
+            type="button"
+            onClick={() => setTipo("PINTURA")}
+            disabled={modo === "edicion"}
+            className={
+              "flex-1 h-14 rounded-xl border-2 font-bold inline-flex items-center justify-center gap-2 " +
+              (tipo === "PINTURA"
+                ? "border-violet-500 bg-violet-50 text-violet-900"
+                : "border-slate-300 bg-white text-slate-600") +
+              (modo === "edicion" ? " opacity-60 cursor-not-allowed" : "")
+            }
+          >
+            <Paintbrush className="h-5 w-5" /> Pintura
+          </button>
+          <button
+            type="button"
+            onClick={() => setTipo("LAVADO")}
+            disabled={modo === "edicion"}
+            className={
+              "flex-1 h-14 rounded-xl border-2 font-bold inline-flex items-center justify-center gap-2 " +
+              (tipo === "LAVADO"
+                ? "border-sky-500 bg-sky-50 text-sky-900"
+                : "border-slate-300 bg-white text-slate-600") +
+              (modo === "edicion" ? " opacity-60 cursor-not-allowed" : "")
+            }
+          >
+            <Droplets className="h-5 w-5" /> Lavado
+          </button>
+        </div>
+
         <ClienteAutocomplete
           value={cliente}
           onChange={(c) => {
@@ -562,17 +613,21 @@ function ItemForm({
             setColor(a?.color ?? "");
           }}
         />
-        <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium text-slate-700">Color</span>
-          <Select value={color} onChange={(e) => setColor(e.target.value)}>
-            <option value="">— seleccionar —</option>
-            {CATALOGO_COLORES.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </Select>
-        </label>
+
+        {tipo === "PINTURA" && (
+          <label className="flex flex-col gap-1">
+            <span className="text-sm font-medium text-slate-700">Color</span>
+            <Select value={color} onChange={(e) => setColor(e.target.value)}>
+              <option value="">— seleccionar —</option>
+              {CATALOGO_COLORES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </Select>
+          </label>
+        )}
+
         <label className="flex flex-col gap-1">
           <span className="text-sm font-medium text-slate-700">Cantidad (piezas)</span>
           <Input
@@ -585,30 +640,7 @@ function ItemForm({
           />
         </label>
 
-        <label className="md:col-span-2 flex items-center justify-between rounded-xl border border-slate-300 p-4">
-          <span className="text-base font-medium text-slate-700">Incluye lavado</span>
-          <button
-            type="button"
-            onClick={() => setIncluyeLavado((v) => !v)}
-            className={
-              incluyeLavado
-                ? "relative h-9 w-16 rounded-full bg-emerald-500 transition"
-                : "relative h-9 w-16 rounded-full bg-slate-300 transition"
-            }
-            aria-pressed={incluyeLavado}
-            aria-label="Incluye lavado"
-          >
-            <span
-              className={
-                incluyeLavado
-                  ? "absolute left-8 top-1 h-7 w-7 rounded-full bg-white shadow transition"
-                  : "absolute left-1 top-1 h-7 w-7 rounded-full bg-white shadow transition"
-              }
-            />
-          </button>
-        </label>
-
-        {incluyeLavado && (
+        {tipo === "LAVADO" && (
           <>
             <label className="flex flex-col gap-1">
               <span className="text-sm font-medium text-slate-700">Piezas por percha</span>
@@ -638,6 +670,22 @@ function ItemForm({
             </label>
           </>
         )}
+
+        {modo === "alta" && (
+          <label className="md:col-span-2 flex items-center gap-3 rounded-xl border border-slate-300 p-3 bg-slate-50">
+            <input
+              type="checkbox"
+              checked={tambienOtroTipo}
+              onChange={(e) => setTambienOtroTipo(e.target.checked)}
+              className="h-5 w-5"
+            />
+            <span className="text-base text-slate-700">
+              {tipo === "PINTURA"
+                ? "Crear también su lavado (genera 2 sub-ítems)"
+                : "Crear también su pintura (genera 2 sub-ítems)"}
+            </span>
+          </label>
+        )}
       </div>
 
       <div className="mt-5 flex justify-end gap-3">
@@ -646,11 +694,17 @@ function ItemForm({
         </Button>
         <Button
           onClick={guardar}
-          disabled={!cliente || !articulo || !cantidad || !color}
+          disabled={
+            !cliente ||
+            !articulo ||
+            !cantidad ||
+            (tipo === "PINTURA" && !color)
+          }
           className="bg-[#1627b1] text-white"
           size="lg"
         >
-          <Check className="h-5 w-5 mr-2" /> {inicial ? "Guardar" : "Cargar ítem"}
+          <Check className="h-5 w-5 mr-2" />{" "}
+          {modo === "edicion" ? "Guardar" : "Cargar ítem"}
         </Button>
       </div>
     </div>
