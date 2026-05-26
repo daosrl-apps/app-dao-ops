@@ -24,7 +24,31 @@ const config: Config = {
         },
       },
       fontFamily: {
-        sans: ["var(--font-sans)", "system-ui", "sans-serif"],
+        // Tipografía global del sitio. Impact es font de sistema en Windows /
+        // macOS / iOS. Para Android (y otros) caemos a Anton (Google Font
+        // cargada en layout.tsx) que es visualmente muy parecida, y de ahí a
+        // otras condensadas como último recurso.
+        sans: [
+          "Impact",
+          "Anton",
+          "Haettenschweiler",
+          "Arial Narrow Bold",
+          "Oswald",
+          "system-ui",
+          "sans-serif",
+        ],
+        // Para timers y números: mismo stack que sans (Impact tiene buena
+        // legibilidad en dígitos), pero forzamos tabular-nums via la utility
+        // de Tailwind donde haga falta.
+        mono: [
+          "Impact",
+          "Anton",
+          "Haettenschweiler",
+          "Arial Narrow Bold",
+          "Oswald",
+          "ui-monospace",
+          "monospace",
+        ],
       },
     },
   },
