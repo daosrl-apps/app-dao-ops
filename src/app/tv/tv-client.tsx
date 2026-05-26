@@ -96,6 +96,16 @@ export function TvClient() {
 // =============================================================================
 
 function RowAnterior({ item, animar }: { item: LineaItem | null; animar: boolean }) {
+  // Desvío = duración real − duración teórica del ítem mismo (en minutos).
+  // Positivo → tardó más (rojo). Negativo → tardó menos (verde).
+  let desvioMin: number | null = null;
+  if (item?.inicioReal && item?.finReal) {
+    const realMs =
+      new Date(item.finReal).getTime() - new Date(item.inicioReal).getTime();
+    const teoricoMs = item.duracionTeoricaSeg * 1000;
+    desvioMin = Math.round((realMs - teoricoMs) / 60000);
+  }
+
   return (
     <div
       className={
@@ -103,26 +113,31 @@ function RowAnterior({ item, animar }: { item: LineaItem | null; animar: boolean
         (animar ? "-translate-y-6 opacity-80" : "")
       }
     >
-      <p className="uppercase tracking-widest text-xs md:text-sm text-slate-500 mb-1">
-        Orden anterior
-      </p>
-      {item ? (
-        <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
-          <TipoBadge tipo={item.tipo} />
-          <span className="text-2xl md:text-3xl font-black tracking-tight">
-            {item.cliente.nombre}
-          </span>
-          <span className="text-2xl md:text-3xl font-black tracking-tight">
-            {nombreOrden(item)}
-          </span>
-          <span className="text-base md:text-xl font-bold text-slate-500">
-            {item.cantidad} pzs
-            {item.tipo === "PINTURA" && ` · ${item.color}`}
-          </span>
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <p className="uppercase tracking-widest text-xs md:text-sm text-slate-500 mb-1">
+            Orden anterior
+          </p>
+          {item ? (
+            <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
+              <TipoBadge tipo={item.tipo} />
+              <span className="text-2xl md:text-3xl font-black tracking-tight">
+                {item.cliente.nombre}
+              </span>
+              <span className="text-2xl md:text-3xl font-black tracking-tight">
+                {nombreOrden(item)}
+              </span>
+              <span className="text-base md:text-xl font-bold text-slate-500">
+                {item.cantidad} pzs
+                {item.tipo === "PINTURA" && ` · ${item.color}`}
+              </span>
+            </div>
+          ) : (
+            <p className="text-xl md:text-2xl text-slate-400">—</p>
+          )}
         </div>
-      ) : (
-        <p className="text-xl md:text-2xl text-slate-400">—</p>
-      )}
+        {desvioMin !== null && <DesvioBadge desvioMin={desvioMin} />}
+      </div>
     </div>
   );
 }
@@ -246,26 +261,31 @@ function RowSiguiente({
         (animar ? "translate-y-2 opacity-90" : "")
       }
     >
-      <p className="uppercase tracking-widest text-xs md:text-sm text-slate-400 mb-1">
-        {orden === "próximo" ? "Próxima orden" : "Luego"}
-      </p>
-      {item ? (
-        <div>
-          <TipoBadge tipo={item.tipo} />
-          <p className="text-2xl md:text-3xl font-black tracking-tight leading-tight mt-1">
-            {item.cliente.nombre}
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <p className="uppercase tracking-widest text-xs md:text-sm text-slate-400 mb-1">
+            {orden === "próximo" ? "Próxima orden" : "Luego"}
           </p>
-          <p className="text-2xl md:text-3xl font-black tracking-tight text-slate-100">
-            {nombreOrden(item)}
-          </p>
-          <p className="text-base md:text-lg font-bold text-slate-400 mt-1">
-            {item.cantidad} pzs
-            {item.tipo === "PINTURA" && ` · ${item.color}`}
-          </p>
+          {item ? (
+            <div>
+              <TipoBadge tipo={item.tipo} />
+              <p className="text-2xl md:text-3xl font-black tracking-tight leading-tight mt-1">
+                {item.cliente.nombre}
+              </p>
+              <p className="text-2xl md:text-3xl font-black tracking-tight text-slate-100">
+                {nombreOrden(item)}
+              </p>
+              <p className="text-base md:text-lg font-bold text-slate-400 mt-1">
+                {item.cantidad} pzs
+                {item.tipo === "PINTURA" && ` · ${item.color}`}
+              </p>
+            </div>
+          ) : (
+            <p className="text-2xl text-slate-500">—</p>
+          )}
         </div>
-      ) : (
-        <p className="text-2xl text-slate-500">—</p>
-      )}
+        {item && <RangoHorario inicio={item.inicioTeorico} fin={item.finTeorico} />}
+      </div>
     </div>
   );
 }
@@ -294,6 +314,46 @@ function pad(n: number) {
 /** Texto principal: descripción si existe, si no el código. */
 function nombreOrden(item: LineaItem) {
   return item.articulo.descripcion?.trim() || item.articulo.codigo;
+}
+
+function DesvioBadge({ desvioMin }: { desvioMin: number }) {
+  if (desvioMin === 0) {
+    return (
+      <div className="text-right shrink-0">
+        <p className="uppercase tracking-widest text-xs text-slate-500">Desvío</p>
+        <p className="text-2xl md:text-4xl font-black text-slate-500 tabular-nums">±0 min</p>
+      </div>
+    );
+  }
+  const tarde = desvioMin > 0;
+  return (
+    <div className="text-right shrink-0">
+      <p className="uppercase tracking-widest text-xs text-slate-500">Desvío</p>
+      <p
+        className={
+          "text-2xl md:text-4xl font-black tabular-nums " +
+          (tarde ? "text-red-600" : "text-emerald-600")
+        }
+      >
+        {tarde ? "+" : "−"}
+        {Math.abs(desvioMin)} min
+      </p>
+    </div>
+  );
+}
+
+function RangoHorario({ inicio, fin }: { inicio: string; fin: string }) {
+  return (
+    <div className="text-right shrink-0">
+      <p className="uppercase tracking-widest text-xs text-slate-400">Estimado</p>
+      <p className="text-xl md:text-2xl font-black text-slate-200 tabular-nums">
+        {formatHHMM(new Date(inicio).getTime())}
+      </p>
+      <p className="text-base md:text-lg font-bold text-slate-500 tabular-nums">
+        → {formatHHMM(new Date(fin).getTime())}
+      </p>
+    </div>
+  );
 }
 
 function TipoBadge({ tipo, grande }: { tipo: "LAVADO" | "PINTURA"; grande?: boolean }) {
