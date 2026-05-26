@@ -76,18 +76,16 @@ export function TvClient() {
         serverNow={new Date(serverNow).getTime()}
         animar={animandoAvance}
       />
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <RowSiguiente
-          item={itemsSiguientes[0] ?? null}
-          animar={animandoAvance}
-          orden="próximo"
-        />
-        <RowSiguiente
-          item={itemsSiguientes[1] ?? null}
-          animar={animandoAvance}
-          orden="luego"
-        />
-      </div>
+      <RowSiguiente
+        item={itemsSiguientes[0] ?? null}
+        animar={animandoAvance}
+        orden="próximo"
+      />
+      <RowSiguiente
+        item={itemsSiguientes[1] ?? null}
+        animar={animandoAvance}
+        orden="luego"
+      />
     </div>
   );
 }
