@@ -37,7 +37,9 @@ export interface LineaSnapshot {
   serverNow: string;
   itemActual: LineaItem | null;
   itemAnterior: LineaItem | null;
-  itemSiguiente: LineaItem | null;
+  /// Próximos ítems en cola. Por convención el primero es el "siguiente
+  /// inmediato"; le sigue el "siguiente del siguiente". Hoy devolvemos hasta 2.
+  itemsSiguientes: LineaItem[];
 }
 
 async function buildItem(itemId: string): Promise<LineaItem | null> {
@@ -112,7 +114,7 @@ export async function resolverLineaSnapshot(): Promise<LineaSnapshot> {
   const itemActual = actualRaw ? shapeItem(actualRaw) : null;
 
   let itemAnterior: LineaItem | null = null;
-  let itemSiguiente: LineaItem | null = null;
+  const itemsSiguientes: LineaItem[] = [];
 
   if (itemActual) {
     const prev = await prisma.item.findFirst({
@@ -123,16 +125,36 @@ export async function resolverLineaSnapshot(): Promise<LineaSnapshot> {
         pausas: { orderBy: { inicio: "asc" } },
       },
     });
-    const next = await prisma.item.findFirst({
+    if (prev) itemAnterior = shapeItem(prev);
+
+    // Siguientes dentro del mismo PCP, hasta 2.
+    const nexts = await prisma.item.findMany({
       where: { pcpId: itemActual.pcpId, orden: { gt: itemActual.orden } },
       orderBy: { orden: "asc" },
+      take: 2,
       include: {
         articulo: { include: { cliente: true } },
         pausas: { orderBy: { inicio: "asc" } },
       },
     });
-    if (prev) itemAnterior = shapeItem(prev);
-    if (next) itemSiguiente = shapeItem(next);
+    for (const n of nexts) itemsSiguientes.push(shapeItem(n));
+
+    // Si me faltan siguientes en este PCP, sumo del próximo PCP en cola.
+    if (itemsSiguientes.length < 2) {
+      const sigPcps = await prisma.item.findMany({
+        where: {
+          estado: "PENDIENTE",
+          pcp: { id: { not: itemActual.pcpId }, estado: { in: ["PENDIENTE", "EN_CURSO"] } },
+        },
+        orderBy: [{ pcp: { inicio: "asc" } }, { orden: "asc" }],
+        take: 2 - itemsSiguientes.length,
+        include: {
+          articulo: { include: { cliente: true } },
+          pausas: { orderBy: { inicio: "asc" } },
+        },
+      });
+      for (const n of sigPcps) itemsSiguientes.push(shapeItem(n));
+    }
   } else {
     // No hay nada en curso ni pendiente: buscamos el último finalizado para
     // mostrar de qué venimos.
@@ -151,7 +173,7 @@ export async function resolverLineaSnapshot(): Promise<LineaSnapshot> {
     serverNow: new Date().toISOString(),
     itemActual,
     itemAnterior,
-    itemSiguiente,
+    itemsSiguientes,
   };
 }
 

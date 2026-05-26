@@ -64,10 +64,10 @@ export function TvClient() {
     );
   }
 
-  const { itemActual, itemAnterior, itemSiguiente, serverNow } = snapshot;
+  const { itemActual, itemAnterior, itemsSiguientes, serverNow } = snapshot;
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white p-6 md:p-10 flex flex-col gap-6">
+    <div className="min-h-screen bg-slate-900 text-white p-4 md:p-8 flex flex-col gap-4">
       <RowAnterior item={itemAnterior} animar={animandoAvance} />
       <RowActual
         item={itemActual}
@@ -76,7 +76,18 @@ export function TvClient() {
         serverNow={new Date(serverNow).getTime()}
         animar={animandoAvance}
       />
-      <RowSiguiente item={itemSiguiente} animar={animandoAvance} />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <RowSiguiente
+          item={itemsSiguientes[0] ?? null}
+          animar={animandoAvance}
+          orden="próximo"
+        />
+        <RowSiguiente
+          item={itemsSiguientes[1] ?? null}
+          animar={animandoAvance}
+          orden="luego"
+        />
+      </div>
     </div>
   );
 }
@@ -89,25 +100,27 @@ function RowAnterior({ item, animar }: { item: LineaItem | null; animar: boolean
   return (
     <div
       className={
-        "rounded-3xl bg-white text-slate-400 p-8 shadow transition-transform duration-700 ease-out " +
+        "rounded-3xl bg-white text-slate-400 p-5 md:p-6 shadow transition-transform duration-700 ease-out " +
         (animar ? "-translate-y-6 opacity-80" : "")
       }
     >
-      <p className="uppercase tracking-widest text-sm text-slate-500 mb-2">Orden anterior</p>
+      <p className="uppercase tracking-widest text-xs md:text-sm text-slate-500 mb-1">
+        Orden anterior
+      </p>
       {item ? (
-        <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
-          <span className="text-3xl md:text-5xl font-black tracking-tight">
+        <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
+          <span className="text-2xl md:text-3xl font-black tracking-tight">
             {item.cliente.nombre}
           </span>
-          <span className="text-2xl md:text-4xl font-black tracking-tight">
+          <span className="text-2xl md:text-3xl font-black tracking-tight">
             {nombreOrden(item)}
           </span>
-          <span className="text-xl md:text-3xl font-bold text-slate-500">
+          <span className="text-base md:text-xl font-bold text-slate-500">
             {item.cantidad} pzs · {item.color}
           </span>
         </div>
       ) : (
-        <p className="text-2xl md:text-3xl text-slate-400">—</p>
+        <p className="text-xl md:text-2xl text-slate-400">—</p>
       )}
     </div>
   );
@@ -128,8 +141,8 @@ function RowActual({
 }) {
   if (!item) {
     return (
-      <div className="flex-1 rounded-3xl bg-black text-white p-8 shadow-2xl flex items-center justify-center min-h-[40vh]">
-        <p className="text-4xl text-slate-400">Línea sin orden en curso</p>
+      <div className="rounded-3xl bg-black text-white p-6 shadow-2xl flex items-center justify-center min-h-[24vh]">
+        <p className="text-3xl text-slate-400">Línea sin orden en curso</p>
       </div>
     );
   }
@@ -153,44 +166,44 @@ function RowActual({
   return (
     <div
       className={
-        "flex-1 rounded-3xl bg-black text-white p-6 md:p-10 shadow-2xl border-4 border-slate-700 min-h-[40vh] " +
+        "rounded-3xl bg-black text-white p-5 md:p-8 shadow-2xl border-4 border-slate-700 " +
         "transition-transform duration-700 ease-out " +
         (animar ? "scale-[1.02]" : "")
       }
     >
-      <div className="flex items-start justify-between gap-6">
-        <div className="font-mono tabular-nums text-5xl md:text-7xl font-bold tracking-widest text-emerald-300 drop-shadow">
+      <div className="flex items-start justify-between gap-4">
+        <div className="font-mono tabular-nums text-4xl md:text-6xl font-bold tracking-widest text-emerald-300 drop-shadow">
           {reloj}
         </div>
         <div className="text-right">
-          <p className="uppercase tracking-widest text-emerald-400 text-sm md:text-base">
+          <p className="uppercase tracking-widest text-emerald-400 text-xs md:text-sm">
             En línea
           </p>
           {sobretiempo && (
-            <p className="text-red-400 text-base md:text-lg font-medium">SOBRETIEMPO</p>
+            <p className="text-red-400 text-sm md:text-base font-medium">SOBRETIEMPO</p>
           )}
           {enPausa && (
-            <p className="text-amber-300 text-base md:text-lg font-medium">PAUSADO</p>
+            <p className="text-amber-300 text-sm md:text-base font-medium">PAUSADO</p>
           )}
         </div>
       </div>
 
-      <div className="mt-6 md:mt-10 grid grid-cols-1 md:grid-cols-[1fr_auto] gap-6 items-center">
+      <div className="mt-4 md:mt-6 grid grid-cols-1 md:grid-cols-[1fr_auto] gap-4 items-center">
         <div>
-          <p className="text-5xl md:text-7xl font-black tracking-tight leading-tight">
+          <p className="text-4xl md:text-5xl font-black tracking-tight leading-tight">
             {item.cliente.nombre}
           </p>
-          <p className="text-4xl md:text-6xl font-black tracking-tight mt-2 text-slate-100">
+          <p className="text-3xl md:text-4xl font-black tracking-tight mt-1 text-slate-100">
             {nombreOrden(item)}
           </p>
-          <p className="text-3xl md:text-5xl font-bold mt-2 text-slate-200">{item.color}</p>
-          <p className="text-2xl md:text-3xl font-semibold text-slate-300 mt-1">
+          <p className="text-2xl md:text-3xl font-bold mt-1 text-slate-200">{item.color}</p>
+          <p className="text-xl md:text-2xl font-semibold text-slate-300 mt-1">
             {item.cantidad} piezas
           </p>
         </div>
         <div
           className={
-            "font-mono tabular-nums text-7xl md:text-9xl font-black tracking-wider " +
+            "font-mono tabular-nums text-6xl md:text-8xl font-black tracking-wider " +
             (sobretiempo
               ? "text-red-500 animate-[blink_1s_step-end_infinite]"
               : enPausa
@@ -206,29 +219,39 @@ function RowActual({
   );
 }
 
-function RowSiguiente({ item, animar }: { item: LineaItem | null; animar: boolean }) {
+function RowSiguiente({
+  item,
+  animar,
+  orden,
+}: {
+  item: LineaItem | null;
+  animar: boolean;
+  orden: "próximo" | "luego";
+}) {
   return (
     <div
       className={
-        "rounded-3xl bg-slate-800 text-slate-200 p-8 shadow transition-transform duration-700 ease-out " +
+        "rounded-3xl bg-slate-800 text-slate-200 p-5 md:p-6 shadow transition-transform duration-700 ease-out " +
         (animar ? "translate-y-2 opacity-90" : "")
       }
     >
-      <p className="uppercase tracking-widest text-sm text-slate-400 mb-2">Siguiente</p>
+      <p className="uppercase tracking-widest text-xs md:text-sm text-slate-400 mb-1">
+        {orden === "próximo" ? "Próxima orden" : "Luego"}
+      </p>
       {item ? (
-        <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
-          <span className="text-3xl md:text-5xl font-black tracking-tight">
+        <div>
+          <p className="text-2xl md:text-3xl font-black tracking-tight leading-tight">
             {item.cliente.nombre}
-          </span>
-          <span className="text-2xl md:text-4xl font-black tracking-tight">
+          </p>
+          <p className="text-2xl md:text-3xl font-black tracking-tight text-slate-100">
             {nombreOrden(item)}
-          </span>
-          <span className="text-xl md:text-3xl font-bold text-slate-400">
+          </p>
+          <p className="text-base md:text-lg font-bold text-slate-400 mt-1">
             {item.cantidad} pzs · {item.color}
-          </span>
+          </p>
         </div>
       ) : (
-        <p className="text-2xl md:text-3xl text-slate-500">—</p>
+        <p className="text-2xl text-slate-500">—</p>
       )}
     </div>
   );

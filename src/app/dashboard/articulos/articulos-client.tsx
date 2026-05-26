@@ -4,7 +4,6 @@ import * as React from "react";
 import { Upload, AlertTriangle, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
 
 interface Articulo {
   id: string;
@@ -16,39 +15,6 @@ interface Articulo {
   configPerchas: string | null;
   cliente: { id: string; nombre: string };
 }
-
-const CATALOGO_COLORES = [
-  "Aluminio",
-  "Amarillo",
-  "Amarillo maíz",
-  "Azul",
-  "Beige",
-  "Blanco",
-  "Blanco brillante",
-  "Estrellita",
-  "Fluor naranja",
-  "Fluor rosa",
-  "Fluor verde",
-  "Galv / galvanizado",
-  "Grafito",
-  "Gris",
-  "Gris Shell",
-  "Gris Stara",
-  "Gris topo",
-  "Marrón",
-  "Naranja",
-  "Negro",
-  "Negro tex",
-  "Negro texturado",
-  "Negro s/mate",
-  "Ocre",
-  "Platil",
-  "Rojo",
-  "Rosa",
-  "Shell",
-  "Verde",
-  "Sin color / Revisar",
-];
 
 export function ArticulosClient() {
   const [tab, setTab] = React.useState<"lista" | "importar">("lista");
@@ -97,46 +63,22 @@ export function ArticulosClient() {
 function ListaArticulos() {
   const [items, setItems] = React.useState<Articulo[]>([]);
   const [q, setQ] = React.useState("");
-  const [soloRevisar, setSoloRevisar] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
 
   const reload = React.useCallback(async () => {
     setLoading(true);
     const params = new URLSearchParams();
     if (q) params.set("q", q);
-    if (soloRevisar) params.set("revisar", "true");
     const res = await fetch(`/api/admin/articulos?${params}`);
     const data = await res.json();
     setItems(data.articulos ?? []);
     setLoading(false);
-  }, [q, soloRevisar]);
+  }, [q]);
 
   React.useEffect(() => {
     const t = setTimeout(reload, 200);
     return () => clearTimeout(t);
   }, [reload]);
-
-  const onColorChange = async (a: Articulo, nuevo: string) => {
-    const res = await fetch(`/api/admin/articulos/${a.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ color: nuevo }),
-    });
-    if (res.ok) {
-      reload();
-    } else {
-      alert("No se pudo actualizar el color.");
-    }
-  };
-
-  const onPerchasChange = async (a: Articulo, valor: string) => {
-    const res = await fetch(`/api/admin/articulos/${a.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ configPerchas: valor || null }),
-    });
-    if (!res.ok) alert("No se pudo actualizar.");
-  };
 
   return (
     <>
@@ -150,15 +92,6 @@ function ListaArticulos() {
             className="pl-10"
           />
         </div>
-        <label className="inline-flex items-center gap-2 text-slate-700 text-sm font-medium">
-          <input
-            type="checkbox"
-            checked={soloRevisar}
-            onChange={(e) => setSoloRevisar(e.target.checked)}
-            className="h-5 w-5"
-          />
-          Solo sin color (revisar)
-        </label>
       </div>
 
       <div className="rounded-2xl bg-white shadow-sm border border-slate-200 overflow-x-auto">
@@ -174,8 +107,6 @@ function ListaArticulos() {
                 <th className="px-3 py-2">Código</th>
                 <th className="px-3 py-2">Descripción</th>
                 <th className="px-3 py-2 text-right">Pzs/h</th>
-                <th className="px-3 py-2">Color</th>
-                <th className="px-3 py-2">Perchas</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -188,32 +119,6 @@ function ListaArticulos() {
                   </td>
                   <td className="px-3 py-2 text-right text-slate-700">
                     {a.piezasPorHora.toLocaleString("es-AR", { maximumFractionDigits: 1 })}
-                  </td>
-                  <td className="px-3 py-2">
-                    <Select
-                      value={a.color}
-                      onChange={(e) => onColorChange(a, e.target.value)}
-                      className={
-                        a.colorRevisar ? "h-10 border-amber-400 text-amber-900 font-medium" : "h-10"
-                      }
-                    >
-                      {CATALOGO_COLORES.map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
-                    </Select>
-                  </td>
-                  <td className="px-3 py-2">
-                    <Input
-                      defaultValue={a.configPerchas ?? ""}
-                      onBlur={(e) => {
-                        if ((e.target.value || null) !== a.configPerchas)
-                          onPerchasChange(a, e.target.value);
-                      }}
-                      className="h-10"
-                      placeholder="—"
-                    />
                   </td>
                 </tr>
               ))}
