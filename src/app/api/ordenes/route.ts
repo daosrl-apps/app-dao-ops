@@ -15,18 +15,27 @@
  *     // Si la OT excede el turno, el cliente puede solicitar split:
  *     split?: {
  *       cantidadHoy: number,      // piezas que se completan en este turno
- *       // El resto se crea como una segunda OT (continuación) en el próximo turno.
  *     }
  *   }
  *
- * Respuesta cuando la OT excede el turno y el cliente NO mandó `split`:
- *   { needsSplit: true, fitSeg, restoSeg, finTurno, proximoInicio, sugerenciaCantidadHoy }
+ * Reglas:
+ *   - El inicioProgramado debe ser >= "mínimo permitido" = fin de la última
+ *     OT activa + gap (15 min base, +30 si cambia color). Si no, 409 OVERLAP.
+ *   - Si la OT excede el turno donde cae el inicio, se devuelve `needsSplit`
+ *     con una sugerencia de cuántas piezas se completan hoy. El usuario
+ *     puede reenviar con `split.cantidadHoy` y el sistema crea la padre +
+ *     una continuación en el primer turno del día siguiente.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireSessionApi } from "@/lib/auth-guards";
-import { duracionItem, type ItemCalculable } from "@/lib/schedule";
+import {
+  duracionItem,
+  GAP_BASE_SEG,
+  CAMBIO_COLOR_SEG,
+  type ItemCalculable,
+} from "@/lib/schedule";
 import { obtenerTurnos, evaluarOrdenContraTurno } from "@/lib/turnos";
 
 const Body = z.object({
@@ -94,6 +103,32 @@ export async function POST(req: NextRequest) {
 
   const inicio = new Date(data.inicioProgramado);
 
+  // Validar que el inicio respete el mínimo (no solape con la última activa).
+  const ultima = await prisma.ordenTrabajo.findFirst({
+    where: { estado: { in: ["PENDIENTE", "EN_CURSO"] } },
+    orderBy: { finTeorico: "desc" },
+    select: { id: true, numero: true, tipo: true, color: true, finTeorico: true },
+  });
+  if (ultima) {
+    let gapSeg = GAP_BASE_SEG;
+    if (data.tipo === "PINTURA" && ultima.tipo === "PINTURA") {
+      const cambiaColor = ultima.color.trim().toLowerCase() !== data.color.trim().toLowerCase();
+      if (cambiaColor) gapSeg = GAP_BASE_SEG + CAMBIO_COLOR_SEG;
+    }
+    const minimo = new Date(ultima.finTeorico.getTime() + gapSeg * 1000);
+    if (inicio.getTime() < minimo.getTime()) {
+      return NextResponse.json(
+        {
+          error: "El horario de inicio se solapa con otra OT.",
+          minimo: minimo.toISOString(),
+          gapSeg,
+          ordenAnterior: { numero: ultima.numero, finTeorico: ultima.finTeorico.toISOString() },
+        },
+        { status: 409 },
+      );
+    }
+  }
+
   const computar = (cantidad: number) => {
     const ic: ItemCalculable = {
       tipo: data.tipo,
@@ -112,9 +147,6 @@ export async function POST(req: NextRequest) {
   const evaluacion = evaluarOrdenContraTurno(turnos, inicio, duracionSegOriginal);
 
   if (!evaluacion.entra && !data.split) {
-    // Sugerencia: cuánto entra del total. Para PINTURA es fracción de cantidad
-    // proporcional al fit; para LAVADO la fórmula no es lineal pero
-    // aproximamos por la misma fracción (mejor que nada para el modal).
     const fraccion = duracionSegOriginal > 0 ? evaluacion.fitSeg / duracionSegOriginal : 0;
     const sugerencia = Math.max(0, Math.min(data.cantidad - 1, Math.floor(data.cantidad * fraccion)));
     return NextResponse.json(
@@ -130,7 +162,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Hay split → crear dos OTs: una hoy con cantidadHoy, otra mañana con el resto.
+  // Hay split → crear padre (hoy) + continuación (mañana).
   if (data.split) {
     const cantidadHoy = data.split.cantidadHoy;
     const cantidadResto = data.cantidad - cantidadHoy;
@@ -144,8 +176,6 @@ export async function POST(req: NextRequest) {
     const durHoy = computar(cantidadHoy);
     const durResto = computar(cantidadResto);
 
-    // Si no había evaluación previa (caso raro: el cliente mandó split sin ser
-    // necesario), aún así respetamos las cantidades.
     const proximoInicio =
       evaluacion.entra === false ? evaluacion.proximoInicio : new Date(inicio.getTime() + durHoy * 1000);
 
@@ -187,7 +217,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, orden: padre, continuacion }, { status: 201 });
   }
 
-  // La OT entra completa en el turno → caso simple.
+  // La OT entra completa en el turno.
   const orden = await prisma.ordenTrabajo.create({
     data: {
       articuloId: data.articuloId,

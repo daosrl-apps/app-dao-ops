@@ -5,15 +5,18 @@
  *
  * Flujo:
  *  1. Elegir tipo (LAVADO / PINTURA), cliente, artículo, color, cantidad.
- *  2. Elegir horario de inicio (default = ahora).
- *  3. Confirmar. Si la OT excede el turno en el que cae el inicio, el backend
- *     devuelve `needsSplit` y mostramos un modal pidiendo cuántas piezas se
- *     completan en este turno; el resto se crea como continuación en el
- *     primer turno disponible del día siguiente.
+ *  2. El horario de inicio se pre-rellena con la sugerencia del backend
+ *     (fin de la última OT activa + 15 min, o + 45 si cambia el color).
+ *     El usuario puede empujarlo hacia adelante pero NO hacia atrás del
+ *     sugerido — el backend además valida con 409 si hay solape.
+ *  3. Si la OT excede el turno donde cae el inicio, el backend devuelve
+ *     `needsSplit` y mostramos un modal pidiendo cuántas piezas se completan
+ *     en este turno; el resto se crea como continuación en el primer turno
+ *     disponible del día siguiente.
  */
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Check, Droplets, Paintbrush, X } from "lucide-react";
+import { AlertTriangle, Check, Droplets, Paintbrush, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -43,6 +46,14 @@ interface Articulo {
   cliente: { id: string; nombre: string };
 }
 
+interface Sugerencia {
+  sugerido: string;
+  minimo: string;
+  gapSeg: number;
+  razon: "base" | "cambio_color" | "sin_orden_previa";
+  ordenAnterior: { numero: number; finTeorico: string; color: string; tipo: Tipo } | null;
+}
+
 interface SplitInfo {
   fitSeg: number;
   restoSeg: number;
@@ -60,6 +71,8 @@ export function NuevaOrdenClient() {
   const [cantidad, setCantidad] = React.useState<string>("");
   const [piezasPorPercha, setPiezasPorPercha] = React.useState<number>(1);
   const [velocidadLavado, setVelocidadLavado] = React.useState<number>(1.0);
+
+  const [sugerencia, setSugerencia] = React.useState<Sugerencia | null>(null);
   const [inicioFecha, setInicioFecha] = React.useState<string>(() => hoyISO());
   const [inicioHora, setInicioHora] = React.useState<string>(() => ahoraHHMM());
 
@@ -67,11 +80,37 @@ export function NuevaOrdenClient() {
   const [error, setError] = React.useState<string | null>(null);
   const [splitInfo, setSplitInfo] = React.useState<SplitInfo | null>(null);
 
+  // Refrescamos la sugerencia cada vez que cambia tipo/color (afecta el gap).
+  React.useEffect(() => {
+    let cancelled = false;
+    const fetchSugerencia = async () => {
+      const params = new URLSearchParams({ tipo, color: color || "" });
+      const res = await fetch(`/api/ordenes/sugerencia?${params}`);
+      if (!res.ok) return;
+      const data: Sugerencia = await res.json();
+      if (cancelled) return;
+      setSugerencia(data);
+      const d = new Date(data.sugerido);
+      setInicioFecha(toYMD(d));
+      setInicioHora(toHHMM(d));
+    };
+    fetchSugerencia();
+    return () => {
+      cancelled = true;
+    };
+  }, [tipo, color]);
+
   const inicioISO = React.useMemo(() => {
     const [y, m, d] = inicioFecha.split("-").map(Number);
     const [h, mi] = inicioHora.split(":").map(Number);
     return new Date(y, m - 1, d, h, mi, 0, 0).toISOString();
   }, [inicioFecha, inicioHora]);
+
+  // Validación: el inicio elegido no puede ser menor al sugerido (= mínimo).
+  const inicioTooEarly = React.useMemo(() => {
+    if (!sugerencia) return false;
+    return new Date(inicioISO).getTime() < new Date(sugerencia.minimo).getTime() - 60_000;
+  }, [inicioISO, sugerencia]);
 
   const guardar = async (split?: { cantidadHoy: number }) => {
     setSubmitting(true);
@@ -94,6 +133,16 @@ export function NuevaOrdenClient() {
     const data = await res.json().catch(() => ({}));
     setSubmitting(false);
 
+    if (res.status === 409 && typeof data.minimo === "string") {
+      // Overlap: el backend nos manda el mínimo y nosotros saltamos el inicio.
+      const min = new Date(data.minimo);
+      setInicioFecha(toYMD(min));
+      setInicioHora(toHHMM(min));
+      setError(
+        `El horario elegido se solapa con la OT #${data.ordenAnterior?.numero}. Mínimo permitido: ${formatFechaHora(min)}.`,
+      );
+      return;
+    }
     if (!res.ok) {
       setError(typeof data.error === "string" ? data.error : "No se pudo guardar la OT.");
       return;
@@ -115,6 +164,7 @@ export function NuevaOrdenClient() {
     !!articulo &&
     !!cantidad &&
     Number(cantidad) > 0 &&
+    !inicioTooEarly &&
     (tipo !== "PINTURA" || !!color || !!articulo?.color);
 
   return (
@@ -235,6 +285,20 @@ export function NuevaOrdenClient() {
               className="h-14 text-lg"
             />
           </div>
+
+          {sugerencia && <SugerenciaInfo sugerencia={sugerencia} />}
+
+          {inicioTooEarly && sugerencia && (
+            <div className="mt-3 flex items-start gap-2 rounded-xl bg-red-50 border border-red-200 p-3">
+              <AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+              <p className="text-sm text-red-800">
+                No podés iniciar antes de las{" "}
+                <b>{formatFechaHora(new Date(sugerencia.minimo))}</b> (se solaparía con la OT
+                anterior). Podés empujarlo más tarde si querés dejar un hueco.
+              </p>
+            </div>
+          )}
+
           <p className="text-xs text-slate-500 mt-2">
             Si la OT no entra en el turno, el sistema va a preguntarte cómo partirla.
           </p>
@@ -271,6 +335,29 @@ export function NuevaOrdenClient() {
         />
       )}
     </section>
+  );
+}
+
+// =============================================================================
+// Info de la sugerencia de horario
+// =============================================================================
+
+function SugerenciaInfo({ sugerencia }: { sugerencia: Sugerencia }) {
+  if (sugerencia.razon === "sin_orden_previa") {
+    return (
+      <p className="mt-2 text-xs text-slate-500">
+        No hay OTs activas. Podés elegir cualquier horario.
+      </p>
+    );
+  }
+  const prev = sugerencia.ordenAnterior;
+  const gapMin = Math.round(sugerencia.gapSeg / 60);
+  const motivo = sugerencia.razon === "cambio_color" ? "cambio de color (+30)" : "cambio de gancheras";
+  return (
+    <p className="mt-2 text-xs text-slate-600">
+      Sugerido: <b>{formatFechaHora(new Date(sugerencia.sugerido))}</b> ={" "}
+      fin de OT #{prev?.numero} ({formatFechaHora(new Date(prev!.finTeorico))}) + {gapMin} min ({motivo}).
+    </p>
   );
 }
 
@@ -352,7 +439,7 @@ function SplitDialog({
 }
 
 // =============================================================================
-// Autocompletes (compartidos con el wizard previo de PCP)
+// Autocompletes
 // =============================================================================
 
 function ClienteAutocomplete({
@@ -413,6 +500,11 @@ function ClienteAutocomplete({
   );
 }
 
+/**
+ * Autocomplete de producto. Estilo: el nombre/descripción es el título grande;
+ * el código va abajo como subtítulo chico. Al seleccionar, el input muestra
+ * la descripción (cae al código solo si no hay descripción).
+ */
 function ArticuloAutocomplete({
   clienteId,
   value,
@@ -422,9 +514,15 @@ function ArticuloAutocomplete({
   value: Articulo | null;
   onChange: (a: Articulo | null) => void;
 }) {
-  const [q, setQ] = React.useState(value?.codigo ?? "");
+  const tituloDe = (a: Articulo) => a.descripcion?.trim() || a.codigo;
+  const [q, setQ] = React.useState(value ? tituloDe(value) : "");
   const [open, setOpen] = React.useState(false);
   const [resultados, setResultados] = React.useState<Articulo[]>([]);
+
+  // Sincronizar el texto del input cuando cambia el value desde afuera.
+  React.useEffect(() => {
+    setQ(value ? tituloDe(value) : "");
+  }, [value]);
 
   React.useEffect(() => {
     if (!open || !clienteId) return;
@@ -446,11 +544,11 @@ function ArticuloAutocomplete({
         onChange={(e) => {
           setQ(e.target.value);
           setOpen(true);
-          if (value && e.target.value !== value.codigo) onChange(null);
+          if (value && e.target.value !== tituloDe(value)) onChange(null);
         }}
         onFocus={() => setOpen(true)}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
-        placeholder={clienteId ? "Buscar producto…" : "Elegí un cliente primero"}
+        placeholder={clienteId ? "Buscar producto por nombre o código…" : "Elegí un cliente primero"}
         disabled={!clienteId}
       />
       {open && resultados.length > 0 && (
@@ -461,17 +559,14 @@ function ArticuloAutocomplete({
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
                   onChange(a);
-                  setQ(a.codigo);
+                  setQ(tituloDe(a));
                   setOpen(false);
                 }}
                 className="w-full text-left px-4 py-3 hover:bg-slate-100"
               >
-                <div className="text-base font-medium">{a.codigo}</div>
-                {a.descripcion && (
-                  <div className="text-xs text-slate-500">{a.descripcion}</div>
-                )}
-                <div className="text-xs text-slate-500">
-                  {a.color} · {a.piezasPorHora} pzs/h
+                <div className="text-base font-semibold text-slate-900">{tituloDe(a)}</div>
+                <div className="text-xs text-slate-500 mt-0.5">
+                  Código: {a.codigo} · {a.color} · {a.piezasPorHora} pzs/h
                 </div>
               </button>
             </li>
@@ -488,10 +583,15 @@ function ArticuloAutocomplete({
 
 function hoyISO(): string {
   const d = new Date();
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return toYMD(d);
 }
 function ahoraHHMM(): string {
-  const d = new Date();
+  return toHHMM(new Date());
+}
+function toYMD(d: Date): string {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+function toHHMM(d: Date): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 function pad(n: number) {

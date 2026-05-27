@@ -18,12 +18,18 @@ export const PERCHAS_LAVADO = 200;
 /// Separación entre perchas: 84 / 200 = 0.42 m.
 export const SEPARACION_PERCHAS_M = LARGO_LAVADO_M / PERCHAS_LAVADO;
 
-// ---- Tiempos de cambio (sección 5.2) ---------------------------------------
+// ---- Gap entre OTs (regla del 2026-05-27) ---------------------------------
+//
+// Regla nueva del cliente: entre orden y orden siempre hay 15 min de
+// preparación (cambio físico de gancheras). Si además cambia el color, se
+// suman 30 min adicionales (= 45 min total). La regla vieja que separaba
+// "cambio de color (30)" / "cambio de perchas (45)" como eventos condicionales
+// quedó deprecada.
 
-/// Cambio de color: 30 min.
+/// Gap base entre dos OTs consecutivas (preparación / cambio de gancheras).
+export const GAP_BASE_SEG = 15 * 60;
+/// Tiempo adicional si la próxima OT cambia de color respecto de la anterior.
 export const CAMBIO_COLOR_SEG = 30 * 60;
-/// Cambio de perchas: 45 min (también es el máx si coinciden ambos cambios).
-export const CAMBIO_PERCHAS_SEG = 45 * 60;
 
 // =============================================================================
 // Tiempo de pintura
@@ -74,42 +80,28 @@ export function tiempoLavadoSeg(
 export interface ItemParaCambio {
   tipo: ItemTipo;
   color: string;
-  /** Identificador de configuración de perchas. Null/undefined = "sin info";
-   *  dos ítems con el mismo valor no disparan cambio de perchas. */
+  /** Mantenido por compat con código viejo; no se usa más en el cálculo del gap. */
   configPerchas?: string | null;
 }
 
 /**
- * Tiempo de cambio entre `anterior` y `siguiente`:
- *  - Solo aplica si AMBOS ítems son PINTURA. Entre LAVADO no hay cambios (es
- *    una sola línea de lavado, contínua), y al pasar de LAVADO a PINTURA
- *    estamos cambiando de estación física: tampoco se contabiliza como cambio
- *    de la línea de pintura.
- *  - Entre PINTURA y PINTURA:
- *      - cambio de color → 30 min
- *      - cambio de perchas → 45 min
- *      - ambos → solo el mayor (NO suma) → 45 min
- *      - ninguno → 0
+ * Gap entre dos OTs consecutivas (`anterior` → `siguiente`):
+ *  - Base: 15 min siempre (cambio de gancheras / preparación).
+ *  - +30 min si `siguiente` es PINTURA, `anterior` también es PINTURA, y el
+ *    color cambia. Total en ese caso: 45 min.
+ *  - Si alguno es LAVADO, no aplica cambio de color (la comparación de color
+ *    no tiene sentido en lavado): solo gap base = 15 min.
  */
 export function tiempoCambioSeg(anterior: ItemParaCambio, siguiente: ItemParaCambio): number {
-  if (anterior.tipo !== "PINTURA" || siguiente.tipo !== "PINTURA") return 0;
-
+  if (anterior.tipo !== "PINTURA" || siguiente.tipo !== "PINTURA") {
+    return GAP_BASE_SEG;
+  }
   const cambiaColor = normalizarColor(anterior.color) !== normalizarColor(siguiente.color);
-  const cambiaPerchas =
-    normalizarPerchas(anterior.configPerchas) !== normalizarPerchas(siguiente.configPerchas);
-
-  if (cambiaColor && cambiaPerchas) return CAMBIO_PERCHAS_SEG;
-  if (cambiaPerchas) return CAMBIO_PERCHAS_SEG;
-  if (cambiaColor) return CAMBIO_COLOR_SEG;
-  return 0;
+  return cambiaColor ? GAP_BASE_SEG + CAMBIO_COLOR_SEG : GAP_BASE_SEG;
 }
 
 function normalizarColor(c: string): string {
   return c.trim().toLowerCase();
-}
-
-function normalizarPerchas(c: string | null | undefined): string {
-  return (c ?? "").trim().toLowerCase();
 }
 
 // =============================================================================
