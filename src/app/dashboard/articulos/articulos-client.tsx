@@ -9,6 +9,7 @@ interface Articulo {
   id: string;
   codigo: string;
   descripcion: string | null;
+  superficieM2: number | null;
   piezasPorHora: number;
   color: string;
   colorRevisar: boolean;
@@ -106,6 +107,7 @@ function ListaArticulos() {
                 <th className="px-3 py-2">Cliente</th>
                 <th className="px-3 py-2">Código</th>
                 <th className="px-3 py-2">Descripción</th>
+                <th className="px-3 py-2 text-right">Superficie (m²)</th>
                 <th className="px-3 py-2 text-right">Pzs/h</th>
               </tr>
             </thead>
@@ -116,6 +118,11 @@ function ListaArticulos() {
                   <td className="px-3 py-2 font-medium text-slate-800">{a.codigo}</td>
                   <td className="px-3 py-2 text-slate-600 max-w-xs truncate">
                     {a.descripcion ?? "—"}
+                  </td>
+                  <td className="px-3 py-2 text-right text-slate-700">
+                    {a.superficieM2 != null
+                      ? a.superficieM2.toLocaleString("es-AR", { maximumFractionDigits: 3 })
+                      : "—"}
                   </td>
                   <td className="px-3 py-2 text-right text-slate-700">
                     {a.piezasPorHora.toLocaleString("es-AR", { maximumFractionDigits: 1 })}
@@ -146,6 +153,7 @@ interface PreviewResp {
     codigo: string;
     color: string;
     colorRevisar: boolean;
+    superficieM2: number | null;
     piezasPorHora: number;
   }[];
   errores: { lineaOriginal: number; motivo: string; preview: string }[];
@@ -213,8 +221,9 @@ function ImportarCsv({ onDone }: { onDone: () => void }) {
           <h2 className="text-xl font-semibold text-slate-800">Importar catálogo desde CSV</h2>
           <p className="text-slate-600 text-sm">
             Columnas relevantes: <b>A</b> artículo, <b>B</b> cliente, <b>C</b> descripción,{" "}
-            <b>I</b> piezas por hora. Separador: <code>,</code>. El color se extrae del nombre del
-            artículo (columna A).
+            <b>D</b> superficie en m² (opcional), <b>I</b> piezas por hora. Separador:{" "}
+            <code>,</code>. Decimales con punto (ej. <code>0.45</code>). El color se extrae del
+            nombre del artículo (columna A).
           </p>
         </div>
       </div>
@@ -275,6 +284,7 @@ function ImportarCsv({ onDone }: { onDone: () => void }) {
                     <th className="px-3 py-2 text-left">Línea</th>
                     <th className="px-3 py-2 text-left">Cliente</th>
                     <th className="px-3 py-2 text-left">Código</th>
+                    <th className="px-3 py-2 text-right">m²</th>
                     <th className="px-3 py-2 text-right">Pzs/h</th>
                     <th className="px-3 py-2 text-left">Color</th>
                   </tr>
@@ -285,6 +295,9 @@ function ImportarCsv({ onDone }: { onDone: () => void }) {
                       <td className="px-3 py-2 text-slate-500">{m.lineaOriginal}</td>
                       <td className="px-3 py-2">{m.cliente}</td>
                       <td className="px-3 py-2">{m.codigo}</td>
+                      <td className="px-3 py-2 text-right">
+                        {m.superficieM2 != null ? m.superficieM2 : "—"}
+                      </td>
                       <td className="px-3 py-2 text-right">{m.piezasPorHora}</td>
                       <td className="px-3 py-2">
                         {m.colorRevisar ? (

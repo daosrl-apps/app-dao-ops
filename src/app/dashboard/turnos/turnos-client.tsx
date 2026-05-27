@@ -36,11 +36,22 @@ export function TurnosClient({ initial }: { initial: TurnoView[] }) {
   };
 
   const agregarTurno = () => {
-    if (turnos.length >= 2) return;
+    if (turnos.length >= 4) return;
     const orden = turnos.length + 1;
+    // Hora sugerida: arranca después del último turno (no choca).
+    const ultimo = turnos[turnos.length - 1];
+    const minStart = ultimo
+      ? (ultimo.horaInicio * 60 + ultimo.minutoInicio + ultimo.duracionMin) % (24 * 60)
+      : 14 * 60;
     setTurnos((curr) => [
       ...curr,
-      { orden, horaInicio: 14, minutoInicio: 0, duracionMin: 480, habilitado: true },
+      {
+        orden,
+        horaInicio: Math.floor(minStart / 60),
+        minutoInicio: minStart % 60,
+        duracionMin: 480,
+        habilitado: true,
+      },
     ]);
   };
 
@@ -150,9 +161,9 @@ export function TurnosClient({ initial }: { initial: TurnoView[] }) {
         </div>
       ))}
 
-      {turnos.length < 2 && (
+      {turnos.length < 4 && (
         <Button variant="outline" onClick={agregarTurno} className="w-full h-14">
-          <Plus className="h-5 w-5 mr-2" /> Agregar segundo turno
+          <Plus className="h-5 w-5 mr-2" /> Agregar turno {turnos.length + 1}
         </Button>
       )}
 

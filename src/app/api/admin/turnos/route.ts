@@ -33,6 +33,9 @@ const Body = z.object({
   turnos: z.array(TurnoInput).min(1).max(4),
 });
 
+// El máximo de 4 turnos es deliberado: planta con 4 cuadrillas rotando es el
+// caso más extremo razonable. Si crece, subir el `max` acá y el guard de UI.
+
 export async function GET() {
   const auth = await requireSessionApi();
   if ("response" in auth) return auth.response;
