@@ -7,6 +7,7 @@
  *           saca el color)
  *   B (1) — cliente
  *   C (2) — descripción
+ *   D (3) — superficie de la pieza en m² (opcional)
  *   I (8) — piezas por hora
  */
 import { parseCsv, parseNumeroLatam } from "@/lib/csv";
@@ -15,6 +16,7 @@ import { parseColor } from "@/lib/color-parser";
 const COL_ARTICULO = 0; // A
 const COL_CLIENTE = 1; // B
 const COL_DESCRIPCION = 2; // C
+const COL_SUPERFICIE = 3; // D
 const COL_PIEZAS_HORA = 8; // I
 
 export interface FilaProcesada {
@@ -23,6 +25,7 @@ export interface FilaProcesada {
   cliente: string;
   codigo: string;
   descripcion: string | null;
+  superficieM2: number | null;
   piezasPorHora: number;
   color: string;
   colorRevisar: boolean;
@@ -67,6 +70,7 @@ export function procesarCsvArticulos(csvText: string): ProcesoCsvResult {
     const codigo = (r[COL_ARTICULO] ?? "").trim();
     const cliente = (r[COL_CLIENTE] ?? "").trim();
     const descripcionRaw = (r[COL_DESCRIPCION] ?? "").trim();
+    const superficieRaw = (r[COL_SUPERFICIE] ?? "").trim();
     const piezasRaw = (r[COL_PIEZAS_HORA] ?? "").trim();
 
     if (!codigo) {
@@ -95,6 +99,22 @@ export function procesarCsvArticulos(csvText: string): ProcesoCsvResult {
       continue;
     }
 
+    // Superficie es opcional: si está vacía → null. Si tiene algo no parseable
+    // o negativo, se considera error de fila.
+    let superficieM2: number | null = null;
+    if (superficieRaw !== "") {
+      const s = parseNumeroLatam(superficieRaw);
+      if (s === null || s < 0) {
+        errores.push({
+          lineaOriginal: linea,
+          motivo: `Superficie inválida (columna D): "${superficieRaw}"`,
+          preview: r.join(" | "),
+        });
+        continue;
+      }
+      superficieM2 = s;
+    }
+
     const { color, revisar } = parseColor(codigo);
     if (revisar) articulosSinColor++;
 
@@ -103,6 +123,7 @@ export function procesarCsvArticulos(csvText: string): ProcesoCsvResult {
       cliente,
       codigo,
       descripcion: descripcionRaw || null,
+      superficieM2,
       piezasPorHora,
       color,
       colorRevisar: revisar,

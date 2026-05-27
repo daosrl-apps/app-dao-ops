@@ -1,6 +1,8 @@
 /**
- * Cálculo de métricas de la fase de ejecución (sección 9 de la spec).
- * Todas las comparativas son "semana actual vs semana anterior".
+ * Cálculo de métricas de producción.
+ *
+ * Soporta un rango configurable (inicio/fin) y compara contra una ventana
+ * "anterior" del mismo largo. Default: últimos 7 días vs 7 anteriores.
  */
 import { prisma } from "@/lib/db";
 
@@ -22,25 +24,24 @@ function delta(actual: number, anterior: number): Delta {
   };
 }
 
-export interface VentanaSemana {
+export interface Ventana {
   inicio: Date;
   fin: Date;
 }
 
-export function semanasActualYAnterior(ref: Date = new Date()): {
-  actual: VentanaSemana;
-  anterior: VentanaSemana;
-} {
+export function resolverVentanas(actual: Ventana): { actual: Ventana; anterior: Ventana } {
+  const lenMs = actual.fin.getTime() - actual.inicio.getTime();
+  const finAnt = new Date(actual.inicio);
+  const inicioAnt = new Date(finAnt.getTime() - lenMs);
+  return { actual, anterior: { inicio: inicioAnt, fin: finAnt } };
+}
+
+/** Helper: últimos 7 días (ventana actual) y los 7 previos. */
+export function ventanaUltimaSemana(ref: Date = new Date()): Ventana {
   const fin = ref;
   const inicio = new Date(fin);
   inicio.setDate(inicio.getDate() - 7);
-  const finAnt = new Date(inicio);
-  const inicioAnt = new Date(finAnt);
-  inicioAnt.setDate(inicioAnt.getDate() - 7);
-  return {
-    actual: { inicio, fin },
-    anterior: { inicio: inicioAnt, fin: finAnt },
-  };
+  return { inicio, fin };
 }
 
 export interface MetricasSnapshot {
@@ -52,8 +53,9 @@ export interface MetricasSnapshot {
   cambiosPercha: Delta;
   piezasLavadas: Delta;
   piezasPorColor: { color: string; cantidad: number }[];
+  m2PorColor: { color: string; m2: number }[];
   piezasPorCliente: { cliente: string; cantidad: number }[];
-  /// Tabla detalle de ítems FINALIZADO en la ventana actual.
+  /// Tabla detalle de OTs FINALIZADAS en la ventana actual.
   detalle: {
     fecha: string;
     cliente: string;
@@ -66,15 +68,15 @@ export interface MetricasSnapshot {
   }[];
 }
 
-export async function calcularMetricas(ref: Date = new Date()): Promise<MetricasSnapshot> {
-  const { actual, anterior } = semanasActualYAnterior(ref);
+export async function calcularMetricas(rango?: Ventana): Promise<MetricasSnapshot> {
+  const { actual, anterior } = resolverVentanas(rango ?? ventanaUltimaSemana());
 
   const [actualData, anteriorData] = await Promise.all([
     cargarVentana(actual.inicio, actual.fin),
     cargarVentana(anterior.inicio, anterior.fin),
   ]);
 
-  // Por color: agregamos sobre actual.
+  // Por color (piezas): solo PINTURA.
   const porColor = new Map<string, number>();
   for (const it of actualData.items) {
     porColor.set(it.color, (porColor.get(it.color) ?? 0) + it.cantidad);
@@ -82,6 +84,17 @@ export async function calcularMetricas(ref: Date = new Date()): Promise<Metricas
   const piezasPorColor = Array.from(porColor.entries())
     .map(([color, cantidad]) => ({ color, cantidad }))
     .sort((a, b) => b.cantidad - a.cantidad);
+
+  // m² por color: cantidad × superficieM2 (solo PINTURA y solo si superficie > 0).
+  const m2Color = new Map<string, number>();
+  for (const it of actualData.items) {
+    if (it.superficieM2 == null || it.superficieM2 <= 0) continue;
+    const m2 = it.cantidad * it.superficieM2;
+    m2Color.set(it.color, (m2Color.get(it.color) ?? 0) + m2);
+  }
+  const m2PorColor = Array.from(m2Color.entries())
+    .map(([color, m2]) => ({ color, m2: Math.round(m2 * 100) / 100 }))
+    .sort((a, b) => b.m2 - a.m2);
 
   // Por cliente: agregamos sobre actual.
   const porCliente = new Map<string, number>();
@@ -92,7 +105,7 @@ export async function calcularMetricas(ref: Date = new Date()): Promise<Metricas
     .map(([cliente, cantidad]) => ({ cliente, cantidad }))
     .sort((a, b) => b.cantidad - a.cantidad);
 
-  // Detalle: items finalizados en la ventana actual con su desviación.
+  // Detalle: OTs FINALIZADAS en la ventana actual con su desviación.
   const detalle = actualData.itemsFinalizados.map((it) => ({
     fecha: it.finReal.toISOString().slice(0, 10),
     cliente: it.cliente,
@@ -121,6 +134,7 @@ export async function calcularMetricas(ref: Date = new Date()): Promise<Metricas
     cambiosPercha: delta(actualData.cambiosPercha, anteriorData.cambiosPercha),
     piezasLavadas: delta(actualData.piezasLavadas, anteriorData.piezasLavadas),
     piezasPorColor,
+    m2PorColor,
     piezasPorCliente,
     detalle,
   };
@@ -133,7 +147,7 @@ interface VentanaData {
   incumplidas: number;
   cambiosColor: number;
   cambiosPercha: number;
-  items: { color: string; cliente: string; cantidad: number }[];
+  items: { color: string; cliente: string; cantidad: number; superficieM2: number | null }[];
   itemsFinalizados: {
     finReal: Date;
     cliente: string;
@@ -146,73 +160,66 @@ interface VentanaData {
 }
 
 async function cargarVentana(inicio: Date, fin: Date): Promise<VentanaData> {
-  const pcps = await prisma.pcp.findMany({
-    where: { inicio: { gte: inicio, lte: fin } },
-    include: {
-      items: {
-        orderBy: { orden: "asc" },
-        include: { articulo: { include: { cliente: true } } },
-      },
-    },
+  // Tomamos OTs cuyo inicioProgramado cae en la ventana. Para cambios de
+  // color/perchas las ordenamos por inicio (ese es el orden con el que pasan
+  // por la línea).
+  const ordenes = await prisma.ordenTrabajo.findMany({
+    where: { inicioProgramado: { gte: inicio, lte: fin } },
+    orderBy: { inicioProgramado: "asc" },
+    include: { articulo: { include: { cliente: true } } },
   });
 
-  let totalOrdenes = pcps.length;
   let piezasPintadas = 0;
   let piezasLavadas = 0;
   let incumplidas = 0;
   let cambiosColor = 0;
   let cambiosPercha = 0;
-  const items: { color: string; cliente: string; cantidad: number }[] = [];
+  const items: VentanaData["items"] = [];
   const itemsFinalizados: VentanaData["itemsFinalizados"] = [];
 
-  for (const pcp of pcps) {
-    let prevColor: string | null = null;
-    let prevPerchas: string | null = null;
-    for (const it of pcp.items) {
-      // "Piezas pintadas" cuenta solo PINTURA. "Piezas lavadas" cuenta LAVADO.
-      // El artículo se cuenta una vez por tipo de ítem.
-      if (it.estado === "FINALIZADO" && it.inicioReal && it.finReal) {
-        if (it.tipo === "PINTURA") piezasPintadas += it.cantidad;
-        if (it.tipo === "LAVADO") piezasLavadas += it.cantidad;
+  let prevColor: string | null = null;
+  let prevPerchas: string | null = null;
 
-        const dTeo = (it.finTeorico.getTime() - it.inicioTeorico.getTime()) / 1000;
-        const dReal = (it.finReal.getTime() - it.inicioReal.getTime()) / 1000;
-        if (dTeo > 0 && dReal > dTeo * 1.15) incumplidas++;
+  for (const ot of ordenes) {
+    if (ot.estado === "FINALIZADO" && ot.inicioReal && ot.finReal) {
+      if (ot.tipo === "PINTURA") piezasPintadas += ot.cantidad;
+      if (ot.tipo === "LAVADO") piezasLavadas += ot.cantidad;
 
-        itemsFinalizados.push({
-          finReal: it.finReal,
-          cliente: it.articulo.cliente.nombre,
-          articulo: it.articulo.codigo,
-          color: it.tipo === "PINTURA" ? it.color : "(lavado)",
-          cantidad: it.cantidad,
-          duracionTeoricaSeg: dTeo,
-          duracionRealSeg: dReal,
-        });
-      }
+      const dTeo = (ot.finTeorico.getTime() - ot.inicioTeorico.getTime()) / 1000;
+      const dReal = (ot.finReal.getTime() - ot.inicioReal.getTime()) / 1000;
+      if (dTeo > 0 && dReal > dTeo * 1.15) incumplidas++;
 
-      // Para el pie de "piezas por color" solo cuentan PINTURA.
-      if (it.tipo === "PINTURA") {
-        items.push({
-          color: it.color,
-          cliente: it.articulo.cliente.nombre,
-          cantidad: it.cantidad,
-        });
-      }
+      itemsFinalizados.push({
+        finReal: ot.finReal,
+        cliente: ot.articulo.cliente.nombre,
+        articulo: ot.articulo.codigo,
+        color: ot.tipo === "PINTURA" ? ot.color : "(lavado)",
+        cantidad: ot.cantidad,
+        duracionTeoricaSeg: dTeo,
+        duracionRealSeg: dReal,
+      });
+    }
 
-      // Cambios de color y perchas solo se computan entre items PINTURA
-      // consecutivos (los LAVADO ocurren en otra estación).
-      if (it.tipo === "PINTURA") {
-        if (prevColor !== null && prevColor !== it.color) cambiosColor++;
-        const perchasActuales = it.configPerchas ?? "";
-        if (prevPerchas !== null && prevPerchas !== perchasActuales) cambiosPercha++;
-        prevColor = it.color;
-        prevPerchas = perchasActuales;
-      }
+    // Para el pie de "piezas por color" y "m² por color" solo cuentan PINTURA.
+    if (ot.tipo === "PINTURA") {
+      items.push({
+        color: ot.color,
+        cliente: ot.articulo.cliente.nombre,
+        cantidad: ot.cantidad,
+        superficieM2: ot.articulo.superficieM2 ?? null,
+      });
+
+      // Cambios entre PINTURA consecutivas.
+      if (prevColor !== null && prevColor !== ot.color) cambiosColor++;
+      const perchasActuales = ot.configPerchas ?? "";
+      if (prevPerchas !== null && prevPerchas !== perchasActuales) cambiosPercha++;
+      prevColor = ot.color;
+      prevPerchas = perchasActuales;
     }
   }
 
-  // Solo contamos órdenes que tengan al menos un ítem finalizado.
-  totalOrdenes = pcps.filter((p) => p.items.some((i) => i.estado === "FINALIZADO")).length;
+  // Solo contamos órdenes finalizadas como "ordenes totales".
+  const totalOrdenes = ordenes.filter((o) => o.estado === "FINALIZADO").length;
 
   return {
     totalOrdenes,

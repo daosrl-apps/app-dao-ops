@@ -1,4 +1,4 @@
-// dao-ops — schema completo: auth + dominio de PCP / producción.
+// dao-ops — schema: auth + dominio de Órdenes de Trabajo + Turnos.
 
 generator client {
   provider = "prisma-client-js"
@@ -40,9 +40,9 @@ model User {
   updatedAt      DateTime  @updatedAt
   deletedAt      DateTime?
 
-  sessions      Session[]
-  pcpsCreados   Pcp[]            @relation("PcpCreador")
-  importaciones ImportacionCsv[]
+  sessions       Session[]
+  ordenesCreadas OrdenTrabajo[]   @relation("OrdenCreador")
+  importaciones  ImportacionCsv[]
 
   @@index([isActive])
 }
@@ -92,30 +92,32 @@ model Cliente {
   @@index([nombre])
 }
 
-/// Artículo del catálogo. Vienen del CSV (columnas B, C, D, J).
+/// Artículo del catálogo. Vienen del CSV.
 /// `color` se extrae del nombre por el parser; si no matchea, queda como
 /// "Sin color / Revisar" y `colorRevisar = true`.
 model Articulo {
   id            String   @id @default(cuid())
-  /// Columna B del CSV — nombre/código del artículo. Único dentro de un cliente.
+  /// Columna A del CSV — nombre/código del artículo. Único dentro de un cliente.
   codigo        String
   clienteId     String
-  /// Columna D — descripción libre.
+  /// Columna C — descripción libre.
   descripcion   String?
-  /// Columna J — piezas por hora de pintura.
+  /// Columna D — superficie de la pieza en m² (para reportes de m² pintados).
+  superficieM2  Float?
+  /// Columna I — piezas por hora de pintura.
   piezasPorHora Float
   /// Color extraído del nombre, o "Sin color / Revisar".
   color         String
   /// true si el parser no detectó color y el admin todavía no lo corrigió.
   colorRevisar  Boolean  @default(false)
   /// Configuración de perchas/gancheras (string libre). Si cambia entre dos
-  /// ítems consecutivos en el PCP, se computa un cambio de perchas (45 min).
+  /// OTs PINTURA consecutivos, se computa un cambio de perchas (45 min).
   configPerchas String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  cliente Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
-  items   Item[]
+  cliente Cliente        @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  ordenes OrdenTrabajo[]
 
   @@unique([clienteId, codigo])
   @@index([color])
@@ -123,116 +125,107 @@ model Articulo {
 }
 
 // =============================================================================
-// PCP (Plan / orden de trabajo de jornada)
+// Órdenes de trabajo
 // =============================================================================
 
-enum Jornada {
-  J_06_14
-  J_14_22
-  J_22_06
-  J_06_18
-  J_18_06
-}
-
-enum PcpEstado {
+enum OrdenEstado {
   PENDIENTE
   EN_CURSO
   FINALIZADO
   CANCELADO
 }
 
-enum ItemEstado {
-  PENDIENTE
-  EN_CURSO
-  FINALIZADO
-}
-
-/// Tipo de etapa que representa un Item. Antes lavado y pintura iban juntos
-/// en un mismo Item con flag `incluyeLavado`; ahora son ítems separados — al
-/// crear un PCP con un ítem "con lavado", el backend genera dos rows: una
-/// LAVADO + una PINTURA. La regla de optimización agrupa todos los LAVADO
-/// primero y después los PINTURA.
 enum ItemTipo {
   LAVADO
   PINTURA
 }
 
-model Pcp {
-  id          String    @id @default(cuid())
-  /// Fecha y hora de inicio de la jornada (inicio del primer ítem).
-  inicio      DateTime
-  jornada     Jornada
-  estado      PcpEstado @default(PENDIENTE)
-  creadoPorId String
-  /// Si el supervisor reordenó manualmente, true → el sistema no vuelve a
-  /// re-optimizar. Si false, el orden propuesto está activo.
-  ordenManual Boolean   @default(false)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+/// Una Orden de Trabajo (OT) = 1 artículo + cantidad + tipo (LAVADO o PINTURA)
+/// con su horario de inicio elegido por el supervisor. Antes existía un modelo
+/// agrupador "PCP" con sub-ítems; se eliminó. Ahora cada OT es independiente.
+model OrdenTrabajo {
+  id                 String      @id @default(cuid())
+  /// Número correlativo humano-friendly (1, 2, 3…) para referenciar la OT.
+  numero             Int         @unique @default(autoincrement())
+  articuloId         String
+  tipo               ItemTipo
+  /// Color resuelto al cargar la OT. En LAVADO no se usa.
+  color              String
+  cantidad           Int
+  /// Solo aplica a LAVADO.
+  piezasPorPercha    Int?
+  /// Solo aplica a LAVADO. Rango 0.1..3.0 m/s.
+  velocidadLavado    Float?
+  /// Snapshot de configPerchas del Articulo al crear la OT (para no perder
+  /// trazabilidad si después se edita el maestro).
+  configPerchas      String?
+  estado             OrdenEstado @default(PENDIENTE)
+  /// Horario de inicio elegido por el supervisor al cargar la OT.
+  inicioProgramado   DateTime
+  /// Plan teórico (puede recalcularse en cualquier finalización).
+  inicioTeorico      DateTime
+  finTeorico         DateTime
+  /// Tiempos reales (se llenan en iniciar/finalizar).
+  inicioReal         DateTime?
+  finReal            DateTime?
+  /// Si esta OT es la "continuación" de una que se partió por no entrar en el
+  /// turno, apunta a la OT padre. La cantidad acá representa lo que queda por
+  /// hacer; la padre conserva la cantidad original (con su estado FINALIZADO
+  /// y cantidadCompletada = cantidad - resto).
+  ordenPadreId       String?
+  /// Cantidad efectivamente trabajada (útil cuando la OT se cierra parcialmente
+  /// por fin de turno y se genera una continuación).
+  cantidadCompletada Int         @default(0)
+  creadoPorId        String
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
 
-  creadoPor User   @relation("PcpCreador", fields: [creadoPorId], references: [id])
-  items     Item[]
+  articulo       Articulo       @relation(fields: [articuloId], references: [id])
+  creadoPor      User           @relation("OrdenCreador", fields: [creadoPorId], references: [id])
+  pausas         Pausa[]
+  ordenPadre     OrdenTrabajo?  @relation("OrdenContinuacion", fields: [ordenPadreId], references: [id])
+  continuaciones OrdenTrabajo[] @relation("OrdenContinuacion")
 
-  @@index([inicio])
   @@index([estado])
+  @@index([inicioProgramado])
+  @@index([articuloId])
 }
 
-model Item {
-  id              String     @id @default(cuid())
-  pcpId           String
-  articuloId      String
-  /// LAVADO o PINTURA — define qué etapa cubre este ítem. Items "con lavado"
-  /// se desdoblan en dos rows: uno LAVADO + uno PINTURA.
-  tipo            ItemTipo   @default(PINTURA)
-  /// Color resuelto al cargar el ítem. Puede coincidir o no con Articulo.color
-  /// si el supervisor lo cambió manualmente. Para LAVADO se ignora.
-  color           String
-  cantidad        Int
-  /// Flag legacy. En el modelo nuevo (tipo LAVADO|PINTURA) ya no se usa para
-  /// calcular tiempos; queda para compatibilidad con ítems creados antes del
-  /// split.
-  incluyeLavado   Boolean    @default(false)
-  /// 1..10. Null si no incluye lavado.
-  piezasPorPercha Int?
-  /// 0.1..3.0 m/s. Null si no incluye lavado.
-  velocidadLavado Float?
-  /// Snapshot de la config de perchas del Articulo en el momento del PCP,
-  /// para que cambios posteriores al maestro no afecten cálculos pasados.
-  configPerchas   String?
-  /// Posición del ítem en el PCP (0-based). Único dentro del PCP.
-  orden           Int
-  estado          ItemEstado @default(PENDIENTE)
-  /// Tiempos teóricos del plan (recalculados al editar/reordenar el PCP).
-  inicioTeorico   DateTime
-  finTeorico      DateTime
-  /// Tiempos reales (se llenan cuando el operario inicia / finaliza).
-  inicioReal      DateTime?
-  finReal         DateTime?
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
-
-  pcp      Pcp      @relation(fields: [pcpId], references: [id], onDelete: Cascade)
-  articulo Articulo @relation(fields: [articuloId], references: [id])
-  pausas   Pausa[]
-
-  @@unique([pcpId, orden])
-  @@index([pcpId])
-  @@index([estado])
-}
-
-/// Cada vez que un operario pausa un ítem se crea una Pausa con motivo libre.
+/// Cada vez que un operario pausa la OT en curso se crea una Pausa con motivo.
 /// Al reanudar, se setea `fin`. La duración total de pausas suma al tiempo real.
 model Pausa {
   id        String    @id @default(cuid())
-  itemId    String
+  ordenId   String
   motivo    String
   inicio    DateTime  @default(now())
   fin       DateTime?
   createdAt DateTime  @default(now())
 
-  item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  orden OrdenTrabajo @relation(fields: [ordenId], references: [id], onDelete: Cascade)
 
-  @@index([itemId])
+  @@index([ordenId])
+}
+
+// =============================================================================
+// Turnos de trabajo (configuración global)
+// =============================================================================
+
+/// Configuración de turnos de la planta. Hasta N turnos (en la práctica 1 o 2)
+/// con hora de inicio + duración en minutos. Las OTs deben caber dentro de un
+/// turno; si no, se ofrece partirlas y continuarlas al día siguiente.
+model Turno {
+  id          String   @id @default(cuid())
+  /// 1 = primer turno del día, 2 = segundo, etc. Único.
+  orden       Int      @unique
+  /// Hora del día en que arranca (0-23, hora local del server).
+  horaInicio  Int
+  /// Minuto del día en que arranca (0-59, hora local del server).
+  minutoInicio Int     @default(0)
+  /// Duración en minutos.
+  duracionMin Int
+  habilitado  Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 // =============================================================================

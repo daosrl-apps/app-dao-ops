@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Vista del operario: muestra el ítem en curso, con timer decreciente y
+ * Vista del operario: muestra la OT en curso, con timer decreciente y
  * controles de PAUSAR/REANUDAR y FINALIZAR.
  *
  * Polling cada 2 s para refrescar el snapshot tras acciones de otros dispositivos.
@@ -11,7 +11,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { Pause, Play, CheckCircle2, LogOut, Home, Droplets, Paintbrush } from "lucide-react";
-import type { LineaSnapshot, LineaItem } from "@/lib/linea";
+import type { LineaSnapshot, LineaOrden } from "@/lib/linea";
 
 const POLL_MS = 2000;
 
@@ -75,7 +75,7 @@ export function OperarioClient({ userName, role }: { userName: string; role: str
     setSubmitting(false);
   };
 
-  const actual = snapshot?.itemActual ?? null;
+  const actual = snapshot?.ordenActual ?? null;
   const enPausa = !!actual?.pausaActiva;
   const enCurso = actual?.estado === "EN_CURSO";
 
@@ -112,9 +112,9 @@ export function OperarioClient({ userName, role }: { userName: string; role: str
         ) : !actual ? (
           <NoHayOrden />
         ) : !enCurso ? (
-          <ItemPendiente item={actual} onIniciar={iniciar} submitting={submitting} />
+          <OrdenPendiente item={actual} onIniciar={iniciar} submitting={submitting} />
         ) : (
-          <ItemEnCurso
+          <OrdenEnCurso
             item={actual}
             now={now}
             serverNow={new Date(snapshot.serverNow).getTime()}
@@ -179,18 +179,18 @@ function NoHayOrden() {
     <div className="text-center">
       <p className="text-3xl font-bold mb-2">No hay órdenes en cola</p>
       <p className="text-slate-400 text-lg">
-        Esperá a que el supervisor cargue un PCP.
+        Esperá a que el supervisor cargue una OT.
       </p>
     </div>
   );
 }
 
-function ItemPendiente({
+function OrdenPendiente({
   item,
   onIniciar,
   submitting,
 }: {
-  item: LineaItem;
+  item: LineaOrden;
   onIniciar: () => void;
   submitting: boolean;
 }) {
@@ -223,13 +223,13 @@ function ItemPendiente({
   );
 }
 
-function ItemEnCurso({
+function OrdenEnCurso({
   item,
   now,
   serverNow,
   enPausa,
 }: {
-  item: LineaItem;
+  item: LineaOrden;
   now: number;
   serverNow: number;
   enPausa: boolean;
@@ -312,7 +312,7 @@ function pad(n: number) {
 }
 
 /** Texto principal del ítem: descripción si existe, si no el código. */
-function nombreOrden(item: LineaItem) {
+function nombreOrden(item: LineaOrden) {
   return item.articulo.descripcion?.trim() || item.articulo.codigo;
 }
 

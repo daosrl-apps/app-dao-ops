@@ -1,9 +1,9 @@
 import { requireSession } from "@/lib/auth-guards";
-import { NuevoPcpClient } from "./nuevo-pcp-client";
+import { NuevaOrdenClient } from "./nueva-orden-client";
 
 export const dynamic = "force-dynamic";
 
-export default async function NuevoPcpPage() {
+export default async function NuevaOrdenPage() {
   await requireSession(["SUPERVISOR", "ADMIN"]);
-  return <NuevoPcpClient />;
+  return <NuevaOrdenClient />;
 }

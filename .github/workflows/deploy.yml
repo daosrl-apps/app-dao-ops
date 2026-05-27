@@ -48,14 +48,6 @@ jobs:
           echo "==> build images"
           docker compose -f compose.yaml -f compose.prod.yaml build
 
-          echo "==> resolve stale failed migrations (one-shot recovery)"
-          # 20260526_add_item_tipo intentó desdoblar items y chocó con un
-          # UNIQUE, dejando _prisma_migrations con finished_at=null. Lo
-          # marcamos como rolled-back para que el siguiente deploy lo retome.
-          # `|| true` ignora el error si ya estaba aplicado o nunca arrancó.
-          docker compose -f compose.yaml -f compose.prod.yaml run --rm -T web \
-            npx prisma migrate resolve --rolled-back 20260526_add_item_tipo < /dev/null || true
-
           echo "==> apply migrations"
           # -T sin tty + </dev/null para que `compose run` no se trague el resto
           # del heredoc (mismo gotcha que sofia).

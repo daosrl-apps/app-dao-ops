@@ -11,7 +11,7 @@ import {
   Users,
   LineChart,
   Activity,
-  CalendarRange,
+  Clock,
   Monitor,
 } from "lucide-react";
 import { requireSession } from "@/lib/auth-guards";
@@ -30,29 +30,22 @@ const TARJETAS: Tarjeta[] = [
   {
     href: "/operario",
     titulo: "Trabajo en curso",
-    desc: "Pausar, reanudar y finalizar el ítem en línea.",
+    desc: "Pausar, reanudar y finalizar la orden en línea.",
     icon: Activity,
     roles: ["OPERARIO", "SUPERVISOR", "ADMIN"],
   },
   {
-    href: "/dashboard/pcp/nuevo",
-    titulo: "Nueva orden (PCP)",
-    desc: "Cargar una jornada de producción nueva.",
+    href: "/dashboard/ordenes/nueva",
+    titulo: "Nueva orden",
+    desc: "Cargar una OT (lavado o pintura).",
     icon: ClipboardList,
     roles: ["SUPERVISOR", "ADMIN"],
   },
   {
-    href: "/dashboard/pcp",
+    href: "/dashboard/ordenes",
     titulo: "Órdenes de trabajo",
-    desc: "Listado de PCPs y su estado.",
+    desc: "Listado de OTs y su estado.",
     icon: ClipboardList,
-    roles: ["SUPERVISOR", "ADMIN"],
-  },
-  {
-    href: "/dashboard/timeline",
-    titulo: "Timeline",
-    desc: "Plan teórico vs ejecución real del día.",
-    icon: CalendarRange,
     roles: ["SUPERVISOR", "ADMIN"],
   },
   {
@@ -70,6 +63,13 @@ const TARJETAS: Tarjeta[] = [
     roles: ["ADMIN"],
   },
   {
+    href: "/dashboard/turnos",
+    titulo: "Turnos",
+    desc: "Configurar horarios de los turnos de la planta.",
+    icon: Clock,
+    roles: ["ADMIN"],
+  },
+  {
     href: "/dashboard/usuarios",
     titulo: "Usuarios",
     desc: "Alta, baja y edición de operarios / supervisores.",
@@ -79,7 +79,7 @@ const TARJETAS: Tarjeta[] = [
   {
     href: "/dashboard/metricas",
     titulo: "Métricas",
-    desc: "Dashboard y comparativa contra la semana anterior.",
+    desc: "Dashboard y comparativa contra el período anterior.",
     icon: LineChart,
     roles: ["ADMIN"],
   },

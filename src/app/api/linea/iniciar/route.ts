@@ -1,11 +1,10 @@
 /**
  * POST /api/linea/iniciar
  *
- * Marca como EN_CURSO el siguiente ítem PENDIENTE (el "actual" del snapshot).
- * Setea `inicioReal = now`, marca el PCP padre como EN_CURSO si estaba en
- * PENDIENTE.
+ * Marca como EN_CURSO la próxima OT PENDIENTE (la "actual" del snapshot).
+ * Setea `inicioReal = now`.
  *
- * Idempotente si el ítem ya está EN_CURSO.
+ * Idempotente si ya hay una OT EN_CURSO.
  */
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
@@ -15,32 +14,23 @@ export async function POST() {
   const auth = await requireSessionApi();
   if ("response" in auth) return auth.response;
 
-  const enCurso = await prisma.item.findFirst({ where: { estado: "EN_CURSO" } });
+  const enCurso = await prisma.ordenTrabajo.findFirst({ where: { estado: "EN_CURSO" } });
   if (enCurso) {
-    return NextResponse.json({ ok: true, itemId: enCurso.id, alreadyRunning: true });
+    return NextResponse.json({ ok: true, ordenId: enCurso.id, alreadyRunning: true });
   }
 
-  const pendiente = await prisma.item.findFirst({
-    where: {
-      estado: "PENDIENTE",
-      pcp: { estado: { in: ["PENDIENTE", "EN_CURSO"] } },
-    },
-    orderBy: [{ pcp: { inicio: "asc" } }, { orden: "asc" }],
+  const pendiente = await prisma.ordenTrabajo.findFirst({
+    where: { estado: "PENDIENTE" },
+    orderBy: { inicioProgramado: "asc" },
   });
   if (!pendiente) {
-    return NextResponse.json({ error: "No hay ítems pendientes" }, { status: 400 });
+    return NextResponse.json({ error: "No hay órdenes pendientes" }, { status: 400 });
   }
 
-  await prisma.$transaction([
-    prisma.item.update({
-      where: { id: pendiente.id },
-      data: { estado: "EN_CURSO", inicioReal: new Date() },
-    }),
-    prisma.pcp.update({
-      where: { id: pendiente.pcpId },
-      data: { estado: "EN_CURSO" },
-    }),
-  ]);
+  await prisma.ordenTrabajo.update({
+    where: { id: pendiente.id },
+    data: { estado: "EN_CURSO", inicioReal: new Date() },
+  });
 
-  return NextResponse.json({ ok: true, itemId: pendiente.id });
+  return NextResponse.json({ ok: true, ordenId: pendiente.id });
 }

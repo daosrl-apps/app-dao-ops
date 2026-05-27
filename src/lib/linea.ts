@@ -1,25 +1,25 @@
 /**
  * Snapshot de la línea de producción.
  *
- * "Actual" = el ítem que el operario está trabajando ahora (EN_CURSO).
- * Si no hay nada EN_CURSO, devolvemos el siguiente PENDIENTE más próximo en
- * los PCPs PENDIENTE/EN_CURSO (ordenados por inicio).
+ * "Actual" = la OT que el operario está trabajando ahora (EN_CURSO).
+ * Si no hay nada EN_CURSO, devolvemos la próxima OT PENDIENTE ordenada por
+ * `inicioProgramado`.
  *
- * "Anterior" y "siguiente" se resuelven dentro del mismo PCP que el actual.
+ * "Anterior" = la OT más reciente FINALIZADA. "Siguientes" = las siguientes
+ * PENDIENTE en cola por `inicioProgramado`.
  */
 import { prisma } from "@/lib/db";
 
-export interface LineaItem {
+export interface LineaOrden {
   id: string;
-  pcpId: string;
-  orden: number;
+  numero: number;
   estado: string;
   tipo: "LAVADO" | "PINTURA";
   color: string;
   cantidad: number;
-  incluyeLavado: boolean;
   piezasPorPercha: number | null;
   velocidadLavado: number | null;
+  inicioProgramado: string;
   inicioTeorico: string;
   finTeorico: string;
   /// Duración teórica en segundos (precalculada para el cliente).
@@ -38,46 +38,33 @@ export interface LineaSnapshot {
   /// ISO del server al momento del request — el cliente lo usa para ajustar
   /// drift de reloj al calcular el timer.
   serverNow: string;
-  itemActual: LineaItem | null;
-  itemAnterior: LineaItem | null;
-  /// Próximos ítems en cola. Por convención el primero es el "siguiente
-  /// inmediato"; le sigue el "siguiente del siguiente". Hoy devolvemos hasta 2.
-  itemsSiguientes: LineaItem[];
+  ordenActual: LineaOrden | null;
+  ordenAnterior: LineaOrden | null;
+  /// Próximas OTs en cola. Por convención el primero es la "siguiente
+  /// inmediata"; le sigue la "siguiente de la siguiente". Hoy devolvemos hasta 2.
+  ordenesSiguientes: LineaOrden[];
 }
 
-async function buildItem(itemId: string): Promise<LineaItem | null> {
-  const it = await prisma.item.findUnique({
-    where: { id: itemId },
-    include: {
-      articulo: { include: { cliente: true } },
-      pausas: { orderBy: { inicio: "asc" } },
-    },
-  });
-  if (!it) return null;
-  return shapeItem(it);
-}
+type OrdenRow = NonNullable<Awaited<ReturnType<typeof prisma.ordenTrabajo.findFirst>>> & {
+  articulo: { codigo: string; descripcion: string | null; cliente: { nombre: string } };
+  pausas: { id: string; inicio: Date; fin: Date | null }[];
+};
 
-function shapeItem(
-  it: NonNullable<Awaited<ReturnType<typeof prisma.item.findFirst>>> & {
-    articulo: { codigo: string; descripcion: string | null; cliente: { nombre: string } };
-    pausas: { id: string; inicio: Date; fin: Date | null }[];
-  },
-): LineaItem {
+function shapeOrden(it: OrdenRow): LineaOrden {
   const pausaActiva = it.pausas.find((p) => p.fin === null) ?? null;
   const pausasFinalizadasMs = it.pausas
     .filter((p) => p.fin !== null)
     .reduce((acc, p) => acc + (p.fin!.getTime() - p.inicio.getTime()), 0);
   return {
     id: it.id,
-    pcpId: it.pcpId,
-    orden: it.orden,
+    numero: it.numero,
     estado: it.estado,
     tipo: it.tipo,
     color: it.color,
     cantidad: it.cantidad,
-    incluyeLavado: it.incluyeLavado,
     piezasPorPercha: it.piezasPorPercha,
     velocidadLavado: it.velocidadLavado,
+    inicioProgramado: it.inicioProgramado.toISOString(),
     inicioTeorico: it.inicioTeorico.toISOString(),
     finTeorico: it.finTeorico.toISOString(),
     duracionTeoricaSeg: Math.round((it.finTeorico.getTime() - it.inicioTeorico.getTime()) / 1000),
@@ -90,97 +77,67 @@ function shapeItem(
   };
 }
 
+const includeFull = {
+  articulo: { include: { cliente: true } },
+  pausas: { orderBy: { inicio: "asc" as const } },
+};
+
 export async function resolverLineaSnapshot(): Promise<LineaSnapshot> {
-  // Buscamos primer ítem EN_CURSO; si no hay, primer PENDIENTE de un PCP
-  // activo, ordenado por (pcp.inicio asc, item.orden asc).
-  const enCurso = await prisma.item.findFirst({
+  // Buscamos la OT EN_CURSO; si no hay, la PENDIENTE más próxima.
+  let actualRaw = await prisma.ordenTrabajo.findFirst({
     where: { estado: "EN_CURSO" },
-    orderBy: [{ pcp: { inicio: "asc" } }, { orden: "asc" }],
-    include: {
-      articulo: { include: { cliente: true } },
-      pausas: { orderBy: { inicio: "asc" } },
-    },
+    orderBy: { inicioProgramado: "asc" },
+    include: includeFull,
   });
 
-  let actualRaw = enCurso;
   if (!actualRaw) {
-    actualRaw = await prisma.item.findFirst({
-      where: {
-        estado: "PENDIENTE",
-        pcp: { estado: { in: ["PENDIENTE", "EN_CURSO"] } },
-      },
-      orderBy: [{ pcp: { inicio: "asc" } }, { orden: "asc" }],
-      include: {
-        articulo: { include: { cliente: true } },
-        pausas: { orderBy: { inicio: "asc" } },
-      },
+    actualRaw = await prisma.ordenTrabajo.findFirst({
+      where: { estado: "PENDIENTE" },
+      orderBy: { inicioProgramado: "asc" },
+      include: includeFull,
     });
   }
 
-  const itemActual = actualRaw ? shapeItem(actualRaw) : null;
+  const ordenActual = actualRaw ? shapeOrden(actualRaw) : null;
 
-  let itemAnterior: LineaItem | null = null;
-  const itemsSiguientes: LineaItem[] = [];
+  // Anterior = última FINALIZADA (por finReal desc).
+  const anteriorRaw = await prisma.ordenTrabajo.findFirst({
+    where: { estado: "FINALIZADO" },
+    orderBy: { finReal: "desc" },
+    include: includeFull,
+  });
+  const ordenAnterior = anteriorRaw ? shapeOrden(anteriorRaw) : null;
 
-  if (itemActual) {
-    const prev = await prisma.item.findFirst({
-      where: { pcpId: itemActual.pcpId, orden: { lt: itemActual.orden } },
-      orderBy: { orden: "desc" },
-      include: {
-        articulo: { include: { cliente: true } },
-        pausas: { orderBy: { inicio: "asc" } },
+  // Siguientes = próximas PENDIENTE, excluyendo la actual si quedó como
+  // "actual por ser pendiente más próxima".
+  const ordenesSiguientes: LineaOrden[] = [];
+  if (ordenActual) {
+    const nexts = await prisma.ordenTrabajo.findMany({
+      where: {
+        estado: "PENDIENTE",
+        id: { not: ordenActual.id },
+        inicioProgramado: { gte: actualRaw!.inicioProgramado },
       },
-    });
-    if (prev) itemAnterior = shapeItem(prev);
-
-    // Siguientes dentro del mismo PCP, hasta 2.
-    const nexts = await prisma.item.findMany({
-      where: { pcpId: itemActual.pcpId, orden: { gt: itemActual.orden } },
-      orderBy: { orden: "asc" },
+      orderBy: { inicioProgramado: "asc" },
       take: 2,
-      include: {
-        articulo: { include: { cliente: true } },
-        pausas: { orderBy: { inicio: "asc" } },
-      },
+      include: includeFull,
     });
-    for (const n of nexts) itemsSiguientes.push(shapeItem(n));
-
-    // Si me faltan siguientes en este PCP, sumo del próximo PCP en cola.
-    if (itemsSiguientes.length < 2) {
-      const sigPcps = await prisma.item.findMany({
-        where: {
-          estado: "PENDIENTE",
-          pcp: { id: { not: itemActual.pcpId }, estado: { in: ["PENDIENTE", "EN_CURSO"] } },
-        },
-        orderBy: [{ pcp: { inicio: "asc" } }, { orden: "asc" }],
-        take: 2 - itemsSiguientes.length,
-        include: {
-          articulo: { include: { cliente: true } },
-          pausas: { orderBy: { inicio: "asc" } },
-        },
-      });
-      for (const n of sigPcps) itemsSiguientes.push(shapeItem(n));
-    }
+    for (const n of nexts) ordenesSiguientes.push(shapeOrden(n));
   } else {
-    // No hay nada en curso ni pendiente: buscamos el último finalizado para
-    // mostrar de qué venimos.
-    const ultimoFin = await prisma.item.findFirst({
-      where: { estado: "FINALIZADO" },
-      orderBy: { finReal: "desc" },
-      include: {
-        articulo: { include: { cliente: true } },
-        pausas: { orderBy: { inicio: "asc" } },
-      },
+    // No hay nada actual: mostramos las próximas 2 pendientes igual.
+    const nexts = await prisma.ordenTrabajo.findMany({
+      where: { estado: "PENDIENTE" },
+      orderBy: { inicioProgramado: "asc" },
+      take: 2,
+      include: includeFull,
     });
-    if (ultimoFin) itemAnterior = shapeItem(ultimoFin);
+    for (const n of nexts) ordenesSiguientes.push(shapeOrden(n));
   }
 
   return {
     serverNow: new Date().toISOString(),
-    itemActual,
-    itemAnterior,
-    itemsSiguientes,
+    ordenActual,
+    ordenAnterior,
+    ordenesSiguientes,
   };
 }
-
-export { buildItem };

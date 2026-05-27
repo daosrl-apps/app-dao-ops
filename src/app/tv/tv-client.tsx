@@ -18,7 +18,7 @@
  */
 import * as React from "react";
 import { Droplets, Paintbrush } from "lucide-react";
-import type { LineaSnapshot, LineaItem } from "@/lib/linea";
+import type { LineaSnapshot, LineaOrden } from "@/lib/linea";
 
 const POLL_MS = 2000;
 
@@ -46,14 +46,14 @@ export function TvClient() {
 
   // Detectar avance: el ítem actual cambió de id.
   React.useEffect(() => {
-    const id = snapshot?.itemActual?.id ?? null;
+    const id = snapshot?.ordenActual?.id ?? null;
     if (prevActualId.current && id && prevActualId.current !== id) {
       setAnimandoAvance(true);
       const t = setTimeout(() => setAnimandoAvance(false), 700);
       return () => clearTimeout(t);
     }
     prevActualId.current = id;
-  }, [snapshot?.itemActual?.id]);
+  }, [snapshot?.ordenActual?.id]);
 
   const reloj = formatHHMM(now);
 
@@ -65,25 +65,25 @@ export function TvClient() {
     );
   }
 
-  const { itemActual, itemAnterior, itemsSiguientes, serverNow } = snapshot;
+  const { ordenActual, ordenAnterior, ordenesSiguientes, serverNow } = snapshot;
 
   return (
     <div className="min-h-screen bg-slate-900 text-white p-4 md:p-8 flex flex-col gap-4">
-      <RowAnterior item={itemAnterior} animar={animandoAvance} />
+      <RowAnterior item={ordenAnterior} animar={animandoAvance} />
       <RowActual
-        item={itemActual}
+        item={ordenActual}
         reloj={reloj}
         now={now}
         serverNow={new Date(serverNow).getTime()}
         animar={animandoAvance}
       />
       <RowSiguiente
-        item={itemsSiguientes[0] ?? null}
+        item={ordenesSiguientes[0] ?? null}
         animar={animandoAvance}
         orden="próximo"
       />
       <RowSiguiente
-        item={itemsSiguientes[1] ?? null}
+        item={ordenesSiguientes[1] ?? null}
         animar={animandoAvance}
         orden="luego"
       />
@@ -95,7 +95,7 @@ export function TvClient() {
 // Filas
 // =============================================================================
 
-function RowAnterior({ item, animar }: { item: LineaItem | null; animar: boolean }) {
+function RowAnterior({ item, animar }: { item: LineaOrden | null; animar: boolean }) {
   // Desvío = duración real − duración teórica del ítem mismo (en minutos).
   // Positivo → tardó más (rojo). Negativo → tardó menos (verde).
   let desvioMin: number | null = null;
@@ -149,7 +149,7 @@ function RowActual({
   serverNow,
   animar,
 }: {
-  item: LineaItem | null;
+  item: LineaOrden | null;
   reloj: string;
   now: number;
   serverNow: number;
@@ -250,7 +250,7 @@ function RowSiguiente({
   animar,
   orden,
 }: {
-  item: LineaItem | null;
+  item: LineaOrden | null;
   animar: boolean;
   orden: "próximo" | "luego";
 }) {
@@ -312,7 +312,7 @@ function pad(n: number) {
 }
 
 /** Texto principal: descripción si existe, si no el código. */
-function nombreOrden(item: LineaItem) {
+function nombreOrden(item: LineaOrden) {
   return item.articulo.descripcion?.trim() || item.articulo.codigo;
 }
 

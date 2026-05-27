@@ -2,8 +2,8 @@
  * POST /api/linea/pausar
  * Body: { motivo: string }
  *
- * Crea una Pausa abierta (`fin` null) sobre el ítem EN_CURSO. Error si ya hay
- * una pausa activa o si no hay ítem corriendo.
+ * Crea una Pausa abierta (`fin` null) sobre la OT EN_CURSO. Error si ya hay
+ * una pausa activa o si no hay OT corriendo.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -21,17 +21,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Hay que indicar un motivo" }, { status: 400 });
   }
 
-  const item = await prisma.item.findFirst({
+  const orden = await prisma.ordenTrabajo.findFirst({
     where: { estado: "EN_CURSO" },
     include: { pausas: { where: { fin: null } } },
   });
-  if (!item) return NextResponse.json({ error: "No hay ítem en curso" }, { status: 400 });
-  if (item.pausas.length > 0) {
+  if (!orden) return NextResponse.json({ error: "No hay OT en curso" }, { status: 400 });
+  if (orden.pausas.length > 0) {
     return NextResponse.json({ error: "Ya hay una pausa abierta" }, { status: 400 });
   }
 
   await prisma.pausa.create({
-    data: { itemId: item.id, motivo: parsed.data.motivo },
+    data: { ordenId: orden.id, motivo: parsed.data.motivo },
   });
   return NextResponse.json({ ok: true });
 }

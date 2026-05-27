@@ -81,6 +81,7 @@ export async function POST(req: NextRequest) {
         where: { id: existente.id },
         data: {
           descripcion: f.descripcion,
+          superficieM2: f.superficieM2,
           piezasPorHora: f.piezasPorHora,
           ...(conservarColor ? {} : { color: f.color, colorRevisar: f.colorRevisar }),
         },
@@ -92,6 +93,7 @@ export async function POST(req: NextRequest) {
           clienteId,
           codigo: f.codigo,
           descripcion: f.descripcion,
+          superficieM2: f.superficieM2,
           piezasPorHora: f.piezasPorHora,
           color: f.color,
           colorRevisar: f.colorRevisar,

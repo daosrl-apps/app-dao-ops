@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { ArrowDown, ArrowRight, ArrowUp, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import type { MetricasSnapshot, Delta } from "@/lib/metricas";
@@ -38,8 +39,17 @@ const COLOR_TO_HEX: Record<string, string> = {
   "Sin color / Revisar": "#fb7185",
 };
 
-export function MetricasClient({ data }: { data: MetricasSnapshot }) {
+export function MetricasClient({
+  data,
+  rangoInicial,
+}: {
+  data: MetricasSnapshot;
+  rangoInicial: { desde: string; hasta: string };
+}) {
+  const router = useRouter();
   const [busqueda, setBusqueda] = React.useState("");
+  const [desde, setDesde] = React.useState(rangoInicial.desde);
+  const [hasta, setHasta] = React.useState(rangoInicial.hasta);
   const [columnas, setColumnas] = React.useState({
     fecha: true,
     cliente: true,
@@ -50,6 +60,27 @@ export function MetricasClient({ data }: { data: MetricasSnapshot }) {
     duracionRealMin: true,
     desviacionPct: true,
   });
+
+  const aplicarRango = (d: string, h: string) => {
+    setDesde(d);
+    setHasta(h);
+    const params = new URLSearchParams({ desde: d, hasta: h });
+    router.push(`/dashboard/metricas?${params}`);
+  };
+
+  const aplicarSemana = () => {
+    const hoy = new Date();
+    const fin = toYMD(hoy);
+    const ini = toYMD(addDays(hoy, -7));
+    aplicarRango(ini, fin);
+  };
+
+  const aplicarMes = () => {
+    const hoy = new Date();
+    const fin = toYMD(hoy);
+    const ini = toYMD(addDays(hoy, -30));
+    aplicarRango(ini, fin);
+  };
 
   const filas = React.useMemo(() => {
     const q = busqueda.trim().toLowerCase();
@@ -62,9 +93,51 @@ export function MetricasClient({ data }: { data: MetricasSnapshot }) {
   return (
     <section className="mx-auto w-full max-w-6xl p-6">
       <h1 className="text-3xl font-bold text-slate-800 mb-1">Métricas</h1>
-      <p className="text-slate-600 mb-6">
-        Comparativa de los últimos 7 días contra los 7 anteriores.
+      <p className="text-slate-600 mb-4">
+        Período actual: {fmtFecha(data.ventana.actual.inicio)} → {fmtFecha(data.ventana.actual.fin)}{" "}
+        · comparado contra: {fmtFecha(data.ventana.anterior.inicio)} →{" "}
+        {fmtFecha(data.ventana.anterior.fin)}.
       </p>
+
+      {/* Selector de rango */}
+      <div className="rounded-2xl bg-white shadow-sm border border-slate-200 p-4 mb-6 flex flex-wrap items-end gap-3">
+        <button
+          onClick={aplicarSemana}
+          className="h-11 px-4 rounded-xl border border-slate-300 bg-white text-sm font-medium hover:bg-slate-50"
+        >
+          Última semana
+        </button>
+        <button
+          onClick={aplicarMes}
+          className="h-11 px-4 rounded-xl border border-slate-300 bg-white text-sm font-medium hover:bg-slate-50"
+        >
+          Último mes
+        </button>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-slate-500 font-medium">Desde</span>
+          <Input
+            type="date"
+            value={desde}
+            onChange={(e) => setDesde(e.target.value)}
+            className="h-11"
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-slate-500 font-medium">Hasta</span>
+          <Input
+            type="date"
+            value={hasta}
+            onChange={(e) => setHasta(e.target.value)}
+            className="h-11"
+          />
+        </label>
+        <button
+          onClick={() => aplicarRango(desde, hasta)}
+          className="h-11 px-5 rounded-xl bg-[#1627b1] text-white text-sm font-medium hover:bg-[#1627b1]/90"
+        >
+          Aplicar
+        </button>
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
         <MetricaCard label="Órdenes de trabajo" delta={data.ordenesTotales} />
@@ -80,7 +153,16 @@ export function MetricasClient({ data }: { data: MetricasSnapshot }) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-        <PieChartCard data={data.piezasPorColor} title="Piezas por color (semana)" />
+        <PieChartCard
+          data={data.piezasPorColor.map((d) => ({ color: d.color, valor: d.cantidad }))}
+          title="Piezas por color"
+          unidad="pzs"
+        />
+        <PieChartCard
+          data={data.m2PorColor.map((d) => ({ color: d.color, valor: d.m2 }))}
+          title="m² pintados por color"
+          unidad="m²"
+        />
         <ClientesCard data={data.piezasPorCliente} />
       </div>
 
@@ -214,7 +296,7 @@ function MetricaCard({
           <ArrowRight className="h-4 w-4" />
         )}
         {delta.pct === null
-          ? `${delta.delta > 0 ? "+" : ""}${delta.delta} (semana previa: 0)`
+          ? `${delta.delta > 0 ? "+" : ""}${delta.delta} (período previo: 0)`
           : `${delta.delta > 0 ? "+" : ""}${delta.delta} (${
               delta.pct > 0 ? "+" : ""
             }${Math.round(delta.pct)}%)`}
@@ -226,11 +308,13 @@ function MetricaCard({
 function PieChartCard({
   data,
   title,
+  unidad,
 }: {
-  data: { color: string; cantidad: number }[];
+  data: { color: string; valor: number }[];
   title: string;
+  unidad: string;
 }) {
-  const total = data.reduce((acc, d) => acc + d.cantidad, 0);
+  const total = data.reduce((acc, d) => acc + d.valor, 0);
   if (total === 0) {
     return (
       <div className="rounded-2xl bg-white shadow-sm border border-slate-200 p-5">
@@ -246,7 +330,7 @@ function PieChartCard({
   const cy = 100;
   let angle = -Math.PI / 2;
   const slices = data.map((d) => {
-    const portion = d.cantidad / total;
+    const portion = d.valor / total;
     const next = angle + portion * Math.PI * 2;
     const x1 = cx + R * Math.cos(angle);
     const y1 = cy + R * Math.sin(angle);
@@ -254,7 +338,7 @@ function PieChartCard({
     const y2 = cy + R * Math.sin(next);
     const largeArc = portion > 0.5 ? 1 : 0;
     const path = `M ${cx} ${cy} L ${x1} ${y1} A ${R} ${R} 0 ${largeArc} 1 ${x2} ${y2} Z`;
-    const slice = { color: d.color, cantidad: d.cantidad, path, hex: COLOR_TO_HEX[d.color] ?? "#94a3b8" };
+    const slice = { color: d.color, valor: d.valor, path, hex: COLOR_TO_HEX[d.color] ?? "#94a3b8" };
     angle = next;
     return slice;
   });
@@ -276,9 +360,11 @@ function PieChartCard({
                 style={{ backgroundColor: COLOR_TO_HEX[d.color] ?? "#94a3b8" }}
               />
               <span className="flex-1 text-slate-700">{d.color}</span>
-              <span className="font-medium text-slate-800">{d.cantidad}</span>
+              <span className="font-medium text-slate-800">
+                {d.valor} {unidad}
+              </span>
               <span className="text-slate-500">
-                {((d.cantidad / total) * 100).toFixed(1)}%
+                {((d.valor / total) * 100).toFixed(1)}%
               </span>
             </li>
           ))}
@@ -293,9 +379,7 @@ function ClientesCard({ data }: { data: { cliente: string; cantidad: number }[] 
   const max = data[0]?.cantidad ?? 1;
   return (
     <div className="rounded-2xl bg-white shadow-sm border border-slate-200 p-5">
-      <p className="text-sm uppercase tracking-wide text-slate-500 mb-3">
-        Piezas por cliente (semana)
-      </p>
+      <p className="text-sm uppercase tracking-wide text-slate-500 mb-3">Piezas por cliente</p>
       {data.length === 0 ? (
         <p className="text-slate-500">Sin datos.</p>
       ) : (
@@ -339,4 +423,23 @@ function labelColumna(k: string) {
     desviacionPct: "Δ%",
   };
   return map[k] ?? k;
+}
+
+function fmtFecha(iso: string) {
+  return new Date(iso).toLocaleDateString("es-AR", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+function addDays(d: Date, n: number): Date {
+  const r = new Date(d);
+  r.setDate(r.getDate() + n);
+  return r;
+}
+function toYMD(d: Date): string {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+function pad(n: number) {
+  return n.toString().padStart(2, "0");
 }
