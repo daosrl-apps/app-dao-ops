@@ -1,19 +1,23 @@
 /**
  * Lógica de turnos de trabajo.
  *
- * Un Turno define hora de inicio (HH:MM local) + duración en minutos. Hay
- * hasta N turnos (en la práctica 1 o 2). Las OTs deben caber dentro de un
- * turno; si una no entra, se ofrece partirla y continuarla en el primer
- * turno disponible del día siguiente.
+ * Un Turno define hora de inicio (HH:MM local) + duración en minutos. Una
+ * jornada laboral puede estar compuesta por 1 a 4 turnos. Los turnos
+ * contiguos (donde el fin de uno coincide con el inicio del siguiente) se
+ * fusionan en una sola "ventana de jornada": la fábrica trabaja sin pausa
+ * de punta a punta. Si la suma cubre las 24 h, la jornada es continua y
+ * nunca corta.
+ *
+ * Las OTs deben caber dentro de una VENTANA (no de un turno individual).
+ * Si una OT no entra, se ofrece partirla y continuarla en el inicio de la
+ * próxima ventana.
  */
 import { prisma } from "@/lib/db";
 
 export interface TurnoSlot {
-  /// Identificador del turno (orden 1, 2, …).
-  orden: number;
-  /// Hora del día (local) de inicio del slot.
+  /// Hora local de inicio de la ventana (puede abarcar varios turnos fusionados).
   inicio: Date;
-  /// Hora del día (local) de fin del slot (inicio + duración).
+  /// Hora local de fin de la ventana.
   fin: Date;
 }
 
@@ -51,10 +55,10 @@ export async function obtenerTurnos(): Promise<TurnoConfig[]> {
 }
 
 /**
- * Construye los slots concretos (Date inicio/fin) para un día dado.
- * El día se interpreta en hora local del server.
+ * Construye los slots crudos de cada turno individual para un día dado.
+ * No fusiona contiguos. Para los chequeos de jornada usar `ventanasJornada`.
  */
-export function slotsParaDia(turnos: TurnoConfig[], dia: Date): TurnoSlot[] {
+function slotsCrudosParaDia(turnos: TurnoConfig[], dia: Date): TurnoSlot[] {
   return turnos.map((t) => {
     const inicio = new Date(
       dia.getFullYear(),
@@ -66,40 +70,63 @@ export function slotsParaDia(turnos: TurnoConfig[], dia: Date): TurnoSlot[] {
       0,
     );
     const fin = new Date(inicio.getTime() + t.duracionMin * 60_000);
-    return { orden: t.orden, inicio, fin };
+    return { inicio, fin };
   });
 }
 
 /**
- * Devuelve el slot de turno que contiene a `inicio` (si hay), buscando hasta
- * 2 días hacia adelante y atrás (para cubrir turnos que cruzan medianoche
- * o cargas previas al primer turno del día).
+ * Devuelve las ventanas de jornada (turnos contiguos fusionados) que tocan
+ * el día `dia`. Considera turnos del día anterior y siguiente porque pueden
+ * encadenarse cruzando medianoche (turno nocturno, jornada 24 h, etc.).
+ *
+ * Las ventanas devueltas pueden extenderse fuera de `dia` si la cadena de
+ * turnos contiguos lo justifica.
+ */
+export function ventanasJornada(turnos: TurnoConfig[], dia: Date): TurnoSlot[] {
+  const todos: TurnoSlot[] = [];
+  for (let delta = -1; delta <= 1; delta++) {
+    const d = new Date(dia);
+    d.setDate(d.getDate() + delta);
+    todos.push(...slotsCrudosParaDia(turnos, d));
+  }
+  todos.sort((a, b) => a.inicio.getTime() - b.inicio.getTime());
+  const merged: TurnoSlot[] = [];
+  for (const s of todos) {
+    const last = merged[merged.length - 1];
+    if (last && last.fin.getTime() >= s.inicio.getTime()) {
+      if (s.fin.getTime() > last.fin.getTime()) last.fin = s.fin;
+    } else {
+      merged.push({ inicio: s.inicio, fin: s.fin });
+    }
+  }
+  return merged;
+}
+
+/**
+ * Devuelve la ventana de jornada que contiene a `inicio` (si hay).
+ * Una ventana es una secuencia de turnos contiguos sin gap entre ellos.
  */
 export function turnoQueContiene(
   turnos: TurnoConfig[],
   inicio: Date,
 ): TurnoSlot | null {
-  for (let delta = -1; delta <= 1; delta++) {
-    const d = new Date(inicio);
-    d.setDate(d.getDate() + delta);
-    for (const s of slotsParaDia(turnos, d)) {
-      if (inicio >= s.inicio && inicio < s.fin) return s;
-    }
+  for (const v of ventanasJornada(turnos, inicio)) {
+    if (inicio >= v.inicio && inicio < v.fin) return v;
   }
   return null;
 }
 
 /**
- * Calcula cuánto durará una OT que arranca en `inicio` con `duracionSeg` de
- * trabajo, considerando si entra completa en el turno o no.
+ * Calcula si una OT que arranca en `inicio` con `duracionSeg` cabe dentro de
+ * la ventana de jornada vigente (turnos contiguos fusionados).
  *
  * Devuelve:
- *  - `entra: true`     → la OT cabe completa.
- *  - `entra: false`    → la OT excede el turno. `fitSeg` es cuánto entra en el
- *                        turno actual (antes del fin del turno); `restoSeg` es
- *                        lo que queda fuera y va a una continuación.
- *                        `proximoInicio` es la hora local del primer turno
- *                        disponible del día siguiente para la continuación.
+ *  - `entra: true`     → la OT cabe completa dentro de la ventana.
+ *  - `entra: false`    → la OT excede la ventana. `fitSeg` es cuánto entra
+ *                        antes del fin de la jornada; `restoSeg` es lo que
+ *                        queda fuera y debe ir a una continuación.
+ *                        `proximoInicio` es el inicio de la próxima ventana
+ *                        de jornada disponible.
  */
 export function evaluarOrdenContraTurno(
   turnos: TurnoConfig[],
@@ -116,8 +143,6 @@ export function evaluarOrdenContraTurno(
     } {
   const slot = turnoQueContiene(turnos, inicio);
   if (!slot) {
-    // Arranca fuera de cualquier turno. Reportamos "no entra" con resto = todo,
-    // sin tiempo de fit y próximo inicio = próximo turno.
     const proximo = proximoTurnoDesde(turnos, inicio);
     return {
       entra: false,
@@ -147,8 +172,8 @@ export function evaluarOrdenContraTurno(
 }
 
 /**
- * Devuelve el inicio del próximo turno disponible estrictamente posterior a
- * `desde`. Busca hasta 14 días por adelantado por las dudas; null si no hay.
+ * Devuelve el inicio de la próxima ventana de jornada estrictamente posterior
+ * a `desde`. Busca hasta 14 días por adelantado por las dudas; null si no hay.
  */
 export function proximoTurnoDesde(
   turnos: TurnoConfig[],
@@ -157,8 +182,8 @@ export function proximoTurnoDesde(
   for (let delta = 0; delta < 14; delta++) {
     const d = new Date(desde);
     d.setDate(d.getDate() + delta);
-    for (const s of slotsParaDia(turnos, d)) {
-      if (s.inicio > desde) return s.inicio;
+    for (const v of ventanasJornada(turnos, d)) {
+      if (v.inicio > desde) return v.inicio;
     }
   }
   return null;
