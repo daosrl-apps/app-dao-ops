@@ -13,6 +13,7 @@ import {
   Activity,
   Clock,
   Monitor,
+  GanttChartSquare,
 } from "lucide-react";
 import { requireSession } from "@/lib/auth-guards";
 
@@ -39,6 +40,13 @@ const TARJETAS: Tarjeta[] = [
     titulo: "Órdenes de trabajo",
     desc: "Listado de OTs, carga de nuevas y su estado.",
     icon: ClipboardList,
+    roles: ["SUPERVISOR", "ADMIN"],
+  },
+  {
+    href: "/dashboard/gantt",
+    titulo: "Gantt",
+    desc: "Diagrama de OTs en una regla de tiempo (girá el celular).",
+    icon: GanttChartSquare,
     roles: ["SUPERVISOR", "ADMIN"],
   },
   {
