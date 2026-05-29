@@ -154,6 +154,7 @@ interface PreviewResp {
     color: string;
     colorRevisar: boolean;
     superficieM2: number | null;
+    perchas: number | null;
     piezasPorHora: number;
   }[];
   errores: { lineaOriginal: number; motivo: string; preview: string }[];
@@ -220,10 +221,12 @@ function ImportarCsv({ onDone }: { onDone: () => void }) {
         <div>
           <h2 className="text-xl font-semibold text-slate-800">Importar catálogo desde CSV</h2>
           <p className="text-slate-600 text-sm">
-            Columnas relevantes: <b>A</b> artículo, <b>B</b> cliente, <b>C</b> descripción,{" "}
-            <b>D</b> superficie en m² (opcional), <b>I</b> piezas por hora. Separador:{" "}
-            <code>,</code>. Decimales con punto (ej. <code>0.45</code>). El color se extrae del
-            nombre del artículo (columna A).
+            Se importa el CSV completo. Columnas:{" "}
+            <code>Artículo, Cliente, Descripción, Superficie, Perchas, Tiempo x vuelta (min.),
+            Piezas x vuelta, Vel. línea (mts. x min.), Piezas x hora</code>. Las columnas se mapean
+            por <b>nombre de encabezado</b> (no por posición). El cálculo de duración usa{" "}
+            <b>Piezas x hora</b>. Separador <code>,</code>, decimales con punto (ej. <code>0.45</code>).
+            El color se extrae del nombre del artículo.
           </p>
         </div>
       </div>
@@ -285,6 +288,7 @@ function ImportarCsv({ onDone }: { onDone: () => void }) {
                     <th className="px-3 py-2 text-left">Cliente</th>
                     <th className="px-3 py-2 text-left">Código</th>
                     <th className="px-3 py-2 text-right">m²</th>
+                    <th className="px-3 py-2 text-right">Perchas</th>
                     <th className="px-3 py-2 text-right">Pzs/h</th>
                     <th className="px-3 py-2 text-left">Color</th>
                   </tr>
@@ -298,6 +302,7 @@ function ImportarCsv({ onDone }: { onDone: () => void }) {
                       <td className="px-3 py-2 text-right">
                         {m.superficieM2 != null ? m.superficieM2 : "—"}
                       </td>
+                      <td className="px-3 py-2 text-right">{m.perchas != null ? m.perchas : "—"}</td>
                       <td className="px-3 py-2 text-right">{m.piezasPorHora}</td>
                       <td className="px-3 py-2">
                         {m.colorRevisar ? (

@@ -1,23 +1,36 @@
 /**
  * Pipeline de procesamiento del CSV de artículos:
- *   parseCsv → mapColumnas → parseColor → preview / upsert.
+ *   parseCsv → mapColumnas (por nombre de encabezado) → parseColor → preview / upsert.
  *
- * El CSV trae columnas indexadas por letra de planilla:
- *   A (0) — nro / nombre del artículo (también es de donde el parser
- *           saca el color)
- *   B (1) — cliente
- *   C (2) — descripción
- *   D (3) — superficie de la pieza en m² (opcional)
- *   I (8) — piezas por hora
+ * Estructura esperada del CSV (con encabezado en la primera fila):
+ *   Artículo, Cliente, Descripción, Superficie, Perchas,
+ *   "Tiempo x vuelta (min.)", "Piezas x vuelta", "Vel. línea (mts. x min.)",
+ *   "Piezas x hora"
+ *
+ * El mapeo se hace por NOMBRE de columna (normalizado), no por posición fija:
+ * así el cálculo no se rompe si el CSV trae columnas corridas o de más. Si no
+ * hay encabezado reconocible, se cae al orden fijo canónico de arriba.
+ *
+ * El cálculo de la duración de la OT usa "Piezas x hora":
+ *   tiempo_pintura = cantidad / piezasPorHora * 3600.
  */
 import { parseCsv, parseNumeroLatam } from "@/lib/csv";
 import { parseColor } from "@/lib/color-parser";
 
-const COL_ARTICULO = 0; // A
-const COL_CLIENTE = 1; // B
-const COL_DESCRIPCION = 2; // C
-const COL_SUPERFICIE = 3; // D
-const COL_PIEZAS_HORA = 8; // I
+/// Índices fijos del orden canónico (fallback si no hay encabezado).
+const FIJO = {
+  codigo: 0,
+  cliente: 1,
+  descripcion: 2,
+  superficie: 3,
+  perchas: 4,
+  tiempoVuelta: 5,
+  piezasVuelta: 6,
+  velLinea: 7,
+  piezasHora: 8,
+} as const;
+
+type CampoCsv = keyof typeof FIJO;
 
 export interface FilaProcesada {
   /// Número de fila original (1-based, incluye header si la había).
@@ -26,6 +39,10 @@ export interface FilaProcesada {
   codigo: string;
   descripcion: string | null;
   superficieM2: number | null;
+  perchas: number | null;
+  tiempoVueltaMin: number | null;
+  piezasPorVuelta: number | null;
+  velLineaMtsMin: number | null;
   piezasPorHora: number;
   color: string;
   colorRevisar: boolean;
@@ -47,36 +64,81 @@ export interface ProcesoCsvResult {
   errores: FilaError[];
 }
 
+/** Normaliza un texto para comparar encabezados: minúsculas, sin acentos, sin puntuación. */
+function norm(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
 /**
- * Procesa el texto del CSV. Detecta y descarta el header si lo hay.
+ * Detecta si la primera fila es un encabezado y devuelve el mapeo
+ * campo → índice de columna. Si no hay encabezado, devuelve los índices fijos.
+ */
+function resolverColumnas(primeraFila: string[]): {
+  tieneHeader: boolean;
+  map: Record<CampoCsv, number>;
+} {
+  const celdas = primeraFila.map(norm);
+  const esHeader = celdas.some(
+    (c) => c.includes("articulo") || c.includes("cliente") || c.includes("piezas"),
+  );
+  if (!esHeader) {
+    return { tieneHeader: false, map: { ...FIJO } };
+  }
+
+  const map: Record<CampoCsv, number> = { ...FIJO };
+  celdas.forEach((c, idx) => {
+    if (c.includes("articulo")) map.codigo = idx;
+    else if (c.includes("cliente")) map.cliente = idx;
+    else if (c.includes("descripcion")) map.descripcion = idx;
+    else if (c.includes("superficie")) map.superficie = idx;
+    else if (c.includes("piezas") && c.includes("hora")) map.piezasHora = idx;
+    else if (c.includes("piezas") && c.includes("vuelta")) map.piezasVuelta = idx;
+    else if (c.includes("tiempo") && c.includes("vuelta")) map.tiempoVuelta = idx;
+    else if (c.includes("vel") && c.includes("linea")) map.velLinea = idx;
+    else if (c.includes("percha")) map.perchas = idx;
+  });
+  return { tieneHeader: true, map };
+}
+
+function numOpcional(raw: string): number | null {
+  const t = raw.trim();
+  if (t === "") return null;
+  return parseNumeroLatam(t);
+}
+
+/**
+ * Procesa el texto del CSV. Detecta y descarta el header si lo hay; mapea las
+ * columnas por nombre.
  */
 export function procesarCsvArticulos(csvText: string): ProcesoCsvResult {
   const { rows } = parseCsv(csvText);
   const filas: FilaProcesada[] = [];
   const errores: FilaError[] = [];
 
-  // Detectar header: la primera fila no parsea piezas/hora como número.
-  let start = 0;
-  if (rows.length > 0) {
-    const first = rows[0];
-    const piezas = parseNumeroLatam(first[COL_PIEZAS_HORA] ?? "");
-    if (piezas === null) start = 1;
+  if (rows.length === 0) {
+    return { totalFilas: 0, filasOk: 0, filasError: 0, articulosSinColor: 0, filas, errores };
   }
+
+  const { tieneHeader, map } = resolverColumnas(rows[0]);
+  const start = tieneHeader ? 1 : 0;
+  const cell = (r: string[], campo: CampoCsv) => (r[map[campo]] ?? "").trim();
 
   let articulosSinColor = 0;
   for (let i = start; i < rows.length; i++) {
     const r = rows[i];
     const linea = i + 1;
-    const codigo = (r[COL_ARTICULO] ?? "").trim();
-    const cliente = (r[COL_CLIENTE] ?? "").trim();
-    const descripcionRaw = (r[COL_DESCRIPCION] ?? "").trim();
-    const superficieRaw = (r[COL_SUPERFICIE] ?? "").trim();
-    const piezasRaw = (r[COL_PIEZAS_HORA] ?? "").trim();
+    const codigo = cell(r, "codigo");
+    const cliente = cell(r, "cliente");
 
     if (!codigo) {
       errores.push({
         lineaOriginal: linea,
-        motivo: "Falta el código del artículo (columna A)",
+        motivo: "Falta el código del artículo",
         preview: r.join(" | "),
       });
       continue;
@@ -84,16 +146,17 @@ export function procesarCsvArticulos(csvText: string): ProcesoCsvResult {
     if (!cliente) {
       errores.push({
         lineaOriginal: linea,
-        motivo: "Falta el cliente (columna B)",
+        motivo: "Falta el cliente",
         preview: r.join(" | "),
       });
       continue;
     }
-    const piezasPorHora = parseNumeroLatam(piezasRaw);
+
+    const piezasPorHora = parseNumeroLatam(cell(r, "piezasHora"));
     if (piezasPorHora === null || piezasPorHora <= 0) {
       errores.push({
         lineaOriginal: linea,
-        motivo: `Piezas por hora inválido (columna I): "${piezasRaw}"`,
+        motivo: `Piezas por hora inválido: "${cell(r, "piezasHora")}"`,
         preview: r.join(" | "),
       });
       continue;
@@ -102,12 +165,13 @@ export function procesarCsvArticulos(csvText: string): ProcesoCsvResult {
     // Superficie es opcional: si está vacía → null. Si tiene algo no parseable
     // o negativo, se considera error de fila.
     let superficieM2: number | null = null;
+    const superficieRaw = cell(r, "superficie");
     if (superficieRaw !== "") {
       const s = parseNumeroLatam(superficieRaw);
       if (s === null || s < 0) {
         errores.push({
           lineaOriginal: linea,
-          motivo: `Superficie inválida (columna D): "${superficieRaw}"`,
+          motivo: `Superficie inválida: "${superficieRaw}"`,
           preview: r.join(" | "),
         });
         continue;
@@ -122,8 +186,12 @@ export function procesarCsvArticulos(csvText: string): ProcesoCsvResult {
       lineaOriginal: linea,
       cliente,
       codigo,
-      descripcion: descripcionRaw || null,
+      descripcion: cell(r, "descripcion") || null,
       superficieM2,
+      perchas: numOpcional(cell(r, "perchas")),
+      tiempoVueltaMin: numOpcional(cell(r, "tiempoVuelta")),
+      piezasPorVuelta: numOpcional(cell(r, "piezasVuelta")),
+      velLineaMtsMin: numOpcional(cell(r, "velLinea")),
       piezasPorHora,
       color,
       colorRevisar: revisar,

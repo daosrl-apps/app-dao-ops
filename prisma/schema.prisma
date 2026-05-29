@@ -100,11 +100,20 @@ model Articulo {
   /// Columna A del CSV — nombre/código del artículo. Único dentro de un cliente.
   codigo        String
   clienteId     String
-  /// Columna C — descripción libre.
+  /// Columna "Descripción" — descripción libre.
   descripcion   String?
-  /// Columna D — superficie de la pieza en m² (para reportes de m² pintados).
+  /// Columna "Superficie" — superficie de la pieza en m² (reportes de m²).
   superficieM2  Float?
-  /// Columna I — piezas por hora de pintura.
+  /// Columna "Perchas" — perchas por pieza (informativo, viene del CSV).
+  perchas       Float?
+  /// Columna "Tiempo x vuelta (min.)" — informativo.
+  tiempoVueltaMin Float?
+  /// Columna "Piezas x vuelta" — informativo.
+  piezasPorVuelta Float?
+  /// Columna "Vel. línea (mts. x min.)" — informativo.
+  velLineaMtsMin  Float?
+  /// Columna "Piezas x hora" — piezas por hora de pintura (driver del cálculo
+  /// de duración de la OT: tiempo = cantidad / piezasPorHora).
   piezasPorHora Float
   /// Color extraído del nombre, o "Sin color / Revisar".
   color         String
