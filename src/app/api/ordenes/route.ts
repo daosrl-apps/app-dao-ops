@@ -73,8 +73,14 @@ export async function DELETE() {
   const auth = await requireSessionApi(["ADMIN"]);
   if ("response" in auth) return auth.response;
 
-  const result = await prisma.ordenTrabajo.deleteMany({});
-  return NextResponse.json({ ok: true, borradas: result.count });
+  // Borra TODAS las OTs (las pausas caen por cascade) y reinicia el contador
+  // `numero` para que la próxima OT vuelva a empezar en #1.
+  const borradas = await prisma.$transaction(async (tx) => {
+    const r = await tx.ordenTrabajo.deleteMany({});
+    await tx.$executeRawUnsafe('ALTER SEQUENCE "OrdenTrabajo_numero_seq" RESTART WITH 1');
+    return r.count;
+  });
+  return NextResponse.json({ ok: true, borradas });
 }
 
 export async function POST(req: NextRequest) {
