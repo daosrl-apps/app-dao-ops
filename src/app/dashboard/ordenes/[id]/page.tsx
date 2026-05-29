@@ -65,21 +65,19 @@ export default async function OrdenDetailPage({
       </p>
 
       <div className="rounded-2xl bg-white border border-slate-200 shadow-sm p-5 mb-4">
-        <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500 mb-3">Tiempos</h2>
-        <dl className="grid grid-cols-2 gap-y-2 text-sm">
-          <dt className="text-slate-500">Inicio programado</dt>
-          <dd className="font-medium">{formatDT(ot.inicioProgramado)}</dd>
-          <dt className="text-slate-500">Inicio teórico</dt>
-          <dd className="font-medium">{formatDT(ot.inicioTeorico)}</dd>
-          <dt className="text-slate-500">Fin teórico</dt>
-          <dd className="font-medium">{formatDT(ot.finTeorico)}</dd>
-          <dt className="text-slate-500">Inicio real</dt>
-          <dd className="font-medium">{ot.inicioReal ? formatDT(ot.inicioReal) : "—"}</dd>
-          <dt className="text-slate-500">Fin real</dt>
-          <dd className="font-medium">{ot.finReal ? formatDT(ot.finReal) : "—"}</dd>
-          <dt className="text-slate-500">Creado por</dt>
-          <dd className="font-medium">{ot.creadoPor.name}</dd>
-        </dl>
+        <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500 mb-4">Tiempos</h2>
+        <div className="space-y-4">
+          <TiempoFila label="Inicio" teorico={ot.inicioTeorico} real={ot.inicioReal} />
+          <TiempoFila label="Fin" teorico={ot.finTeorico} real={ot.finReal} />
+          <div className="flex items-baseline justify-between gap-3 border-t border-slate-100 pt-3">
+            <span className="text-base text-slate-500">Inicio programado</span>
+            <span className="text-lg font-semibold tabular-nums">{formatDT(ot.inicioProgramado)}</span>
+          </div>
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="text-base text-slate-500">Creado por</span>
+            <span className="text-lg font-semibold">{ot.creadoPor.name}</span>
+          </div>
+        </div>
       </div>
 
       {(ot.ordenPadre || ot.continuaciones.length > 0) && (
@@ -144,6 +142,59 @@ function EstadoBadge({ estado }: { estado: string }) {
       {c.label}
     </span>
   );
+}
+
+/**
+ * Fila de tiempo: muestra el teórico y, si hay real, el horario real con un
+ * delta +/- coloreado (rojo si se atrasó, verde si se adelantó).
+ */
+function TiempoFila({
+  label,
+  teorico,
+  real,
+}: {
+  label: string;
+  teorico: Date;
+  real: Date | null;
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="text-base text-slate-500">{label}</span>
+      <div className="text-right">
+        <div className="text-xl font-bold tabular-nums text-slate-900">
+          {real ? formatDT(real) : formatDT(teorico)}
+          {real && <DeltaBadge teorico={teorico} real={real} />}
+        </div>
+        {real && (
+          <div className="text-sm text-slate-400 tabular-nums">teórico {formatDT(teorico)}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DeltaBadge({ teorico, real }: { teorico: Date; real: Date }) {
+  const deltaMin = Math.round((real.getTime() - teorico.getTime()) / 60000);
+  if (deltaMin === 0) {
+    return <span className="ml-2 text-base font-bold text-slate-400">±0m</span>;
+  }
+  const atrasado = deltaMin > 0;
+  const signo = atrasado ? "+" : "−";
+  return (
+    <span
+      className={"ml-2 text-base font-bold " + (atrasado ? "text-red-600" : "text-emerald-600")}
+    >
+      {signo}
+      {formatDelta(Math.abs(deltaMin))}
+    </span>
+  );
+}
+
+function formatDelta(min: number): string {
+  if (min < 60) return `${min}m`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m === 0 ? `${h}h` : `${h}h${m}m`;
 }
 
 function formatDT(d: Date) {

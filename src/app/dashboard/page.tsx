@@ -35,16 +35,9 @@ const TARJETAS: Tarjeta[] = [
     roles: ["OPERARIO", "SUPERVISOR", "ADMIN"],
   },
   {
-    href: "/dashboard/ordenes/nueva",
-    titulo: "Nueva orden",
-    desc: "Cargar una OT (lavado o pintura).",
-    icon: ClipboardList,
-    roles: ["SUPERVISOR", "ADMIN"],
-  },
-  {
     href: "/dashboard/ordenes",
     titulo: "Órdenes de trabajo",
-    desc: "Listado de OTs y su estado.",
+    desc: "Listado de OTs, carga de nuevas y su estado.",
     icon: ClipboardList,
     roles: ["SUPERVISOR", "ADMIN"],
   },

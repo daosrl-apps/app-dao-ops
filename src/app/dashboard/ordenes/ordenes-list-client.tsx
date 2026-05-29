@@ -11,6 +11,7 @@ import {
   GitBranch,
   Paintbrush,
   Trash2,
+  XCircle,
 } from "lucide-react";
 
 export interface OrdenView {
@@ -21,7 +22,7 @@ export interface OrdenView {
   color: string;
   cantidad: number;
   cantidadCompletada: number;
-  inicioProgramado: string;
+  inicioTeorico: string;
   finTeorico: string;
   creadoPor: string;
   articulo: { codigo: string; descripcion: string | null; cliente: string };
@@ -86,8 +87,8 @@ export function OrdenesListClient({
         ) : (
           <ul className="divide-y divide-slate-100">
             {items.map((o) => (
-              <li key={o.id} className="flex items-center justify-between p-5 hover:bg-slate-50 gap-3">
-                <Link href={`/dashboard/ordenes/${o.id}`} className="flex items-center gap-4 flex-1 min-w-0">
+              <li key={o.id} className="flex items-center justify-between p-4 sm:p-5 hover:bg-slate-50 gap-2 sm:gap-3">
+                <Link href={`/dashboard/ordenes/${o.id}`} className="flex items-center gap-2 sm:gap-4 flex-1 min-w-0">
                   <EstadoBadge estado={o.estado} />
                   <TipoBadge tipo={o.tipo} />
                   <div className="min-w-0 flex-1">
@@ -101,11 +102,10 @@ export function OrdenesListClient({
                     </p>
                     <p className="text-sm text-slate-600">
                       <b>{o.articulo.cliente}</b> · {o.cantidad} pzs
-                      {o.tipo === "PINTURA" && ` · ${o.color}`} ·{" "}
-                      {new Date(o.inicioProgramado).toLocaleString("es-AR", {
-                        dateStyle: "short",
-                        timeStyle: "short",
-                      })}
+                      {o.tipo === "PINTURA" && ` · ${o.color}`}
+                    </p>
+                    <p className="text-sm font-medium text-slate-700">
+                      {formatRango(o.inicioTeorico, o.finTeorico)}
                     </p>
                   </div>
                 </Link>
@@ -127,46 +127,57 @@ export function OrdenesListClient({
   );
 }
 
+// En celular: solo ícono (un poco más grande). Desde sm: ícono + texto.
 function EstadoBadge({ estado }: { estado: OrdenView["estado"] }) {
-  if (estado === "EN_CURSO") {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-3 py-1 text-sm font-medium text-blue-800 whitespace-nowrap">
-        <Clock className="h-4 w-4" /> En curso
-      </span>
-    );
-  }
-  if (estado === "FINALIZADO") {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-1 text-sm font-medium text-emerald-800 whitespace-nowrap">
-        <CheckCircle2 className="h-4 w-4" /> Finalizado
-      </span>
-    );
-  }
-  if (estado === "CANCELADO") {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-slate-200 px-3 py-1 text-sm font-medium text-slate-600 whitespace-nowrap">
-        Cancelado
-      </span>
-    );
-  }
+  const cfg = {
+    EN_CURSO: { bg: "bg-blue-100", text: "text-blue-800", icon: Clock, label: "En curso" },
+    FINALIZADO: { bg: "bg-emerald-100", text: "text-emerald-800", icon: CheckCircle2, label: "Finalizado" },
+    CANCELADO: { bg: "bg-slate-200", text: "text-slate-600", icon: XCircle, label: "Cancelado" },
+    PENDIENTE: { bg: "bg-amber-100", text: "text-amber-800", icon: AlertCircle, label: "Pendiente" },
+  }[estado];
+  const Icon = cfg.icon;
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-3 py-1 text-sm font-medium text-amber-800 whitespace-nowrap">
-      <AlertCircle className="h-4 w-4" /> Pendiente
+    <span
+      className={
+        "inline-flex items-center gap-1 rounded-full p-2 sm:px-3 sm:py-1 text-sm font-medium whitespace-nowrap " +
+        `${cfg.bg} ${cfg.text}`
+      }
+      title={cfg.label}
+    >
+      <Icon className="h-5 w-5 sm:h-4 sm:w-4" />
+      <span className="hidden sm:inline">{cfg.label}</span>
     </span>
   );
 }
 
 function TipoBadge({ tipo }: { tipo: "LAVADO" | "PINTURA" }) {
   const lavado = tipo === "LAVADO";
+  const Icon = lavado ? Droplets : Paintbrush;
   return (
     <span
       className={
-        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold uppercase tracking-wide whitespace-nowrap " +
+        "inline-flex items-center gap-1 rounded-full p-2 sm:px-2 sm:py-0.5 text-xs font-bold uppercase tracking-wide whitespace-nowrap " +
         (lavado ? "bg-sky-100 text-sky-800" : "bg-violet-100 text-violet-800")
       }
+      title={lavado ? "Lavado" : "Pintura"}
     >
-      {lavado ? <Droplets className="h-3 w-3" /> : <Paintbrush className="h-3 w-3" />}
-      {lavado ? "Lavado" : "Pintura"}
+      <Icon className="h-5 w-5 sm:h-3 sm:w-3" />
+      <span className="hidden sm:inline">{lavado ? "Lavado" : "Pintura"}</span>
     </span>
   );
+}
+
+/** Formatea el rango inicio→fin. Si es el mismo día, omite la fecha del fin. */
+function formatRango(inicioISO: string, finISO: string): string {
+  const inicio = new Date(inicioISO);
+  const fin = new Date(finISO);
+  const fecha = (d: Date) => d.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit" });
+  const hora = (d: Date) => d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
+  const mismoDia =
+    inicio.getFullYear() === fin.getFullYear() &&
+    inicio.getMonth() === fin.getMonth() &&
+    inicio.getDate() === fin.getDate();
+  return mismoDia
+    ? `${fecha(inicio)} ${hora(inicio)} → ${hora(fin)}`
+    : `${fecha(inicio)} ${hora(inicio)} → ${fecha(fin)} ${hora(fin)}`;
 }

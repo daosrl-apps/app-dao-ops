@@ -11,7 +11,7 @@ export default async function OrdenesListPage() {
 
   const ordenes = await prisma.ordenTrabajo.findMany({
     take: 200,
-    orderBy: { inicioProgramado: "desc" },
+    orderBy: { inicioTeorico: "asc" },
     include: {
       articulo: { include: { cliente: true } },
       creadoPor: { select: { name: true } },
@@ -26,7 +26,7 @@ export default async function OrdenesListPage() {
     color: o.color,
     cantidad: o.cantidad,
     cantidadCompletada: o.cantidadCompletada,
-    inicioProgramado: o.inicioProgramado.toISOString(),
+    inicioTeorico: o.inicioTeorico.toISOString(),
     finTeorico: o.finTeorico.toISOString(),
     creadoPor: o.creadoPor.name,
     articulo: {
