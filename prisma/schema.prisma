@@ -210,13 +210,18 @@ model Pausa {
 // Turnos de trabajo (configuración global)
 // =============================================================================
 
-/// Configuración de turnos de la planta. Hasta N turnos (en la práctica 1 o 2)
-/// con hora de inicio + duración en minutos. Las OTs deben caber dentro de un
-/// turno; si no, se ofrece partirlas y continuarlas al día siguiente.
+/// Configuración de turnos de la planta. Por defecto 3 turnos (Mañana 06-14,
+/// Tarde 14-22, Noche 22-06) que cubren las 24 h. Cada turno se puede
+/// habilitar/deshabilitar y editar (inicio + duración en pasos de 0.5 h).
+/// El inicio del primer turno habilitado = apertura de fábrica; el fin del
+/// último = cierre. Las OTs deben caber dentro de la ventana de jornada
+/// (turnos contiguos fusionados); si no, se ofrece partirlas.
 model Turno {
   id          String   @id @default(cuid())
   /// 1 = primer turno del día, 2 = segundo, etc. Único.
   orden       Int      @unique
+  /// Nombre visible del turno ("Mañana", "Tarde", "Noche").
+  nombre      String   @default("Turno")
   /// Hora del día en que arranca (0-23, hora local del server).
   horaInicio  Int
   /// Minuto del día en que arranca (0-59, hora local del server).
@@ -226,6 +231,23 @@ model Turno {
   habilitado  Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+/// Configuración global de la planta (singleton, id = "default").
+/// Guarda el estado de "Extender turno": cuando está activo, los turnos se
+/// reconfiguran a Mañana 06-12 / Tarde 12-00 (y Noche deshabilitado). Si
+/// `extenderSoloUnaVez` es true, al cambiar el día calendario se restaura la
+/// `configPrevia` automáticamente (revert perezoso en `obtenerTurnos`).
+model ConfiguracionPlanta {
+  id                 String   @id @default("default")
+  extenderActivo     Boolean  @default(false)
+  extenderSoloUnaVez Boolean  @default(false)
+  /// Fecha (día local) en que se activó la extensión, para el revert.
+  extenderFecha      DateTime?
+  /// Snapshot de los turnos previos a la extensión (para restaurar).
+  configPrevia       Json?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 }
 
 // =============================================================================

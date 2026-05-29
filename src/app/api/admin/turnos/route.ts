@@ -1,17 +1,18 @@
 /**
- * GET /api/admin/turnos → lee configuración de turnos
+ * GET /api/admin/turnos → lee configuración de turnos + estado de extensión
  * PUT /api/admin/turnos → reemplaza la configuración
  *
  * Body PUT:
  *   {
  *     turnos: [
- *       { orden: 1, horaInicio: 6, minutoInicio: 0, duracionMin: 480, habilitado: true },
- *       { orden: 2, horaInicio: 14, minutoInicio: 0, duracionMin: 480, habilitado: true }
+ *       { orden: 1, nombre: "Mañana", horaInicio: 6, minutoInicio: 0, duracionMin: 480, habilitado: true },
+ *       ...
  *     ]
  *   }
  *
- * En la práctica hay 1 o 2 turnos. La operación es "replace all": borra los
- * existentes y crea los nuevos en una transacción.
+ * La operación es "replace all": borra los existentes y crea los nuevos en una
+ * transacción. Se valida que los turnos habilitados no se solapen y que la suma
+ * de duraciones no exceda 24 h.
  *
  * GET es accesible por todos los roles autenticados (la app necesita conocer
  * los turnos para validar OTs); PUT solo ADMIN.
@@ -20,9 +21,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireSessionApi } from "@/lib/auth-guards";
+import { obtenerConfiguracionPlanta, validarTurnos } from "@/lib/turnos";
 
 const TurnoInput = z.object({
   orden: z.number().int().min(1).max(10),
+  nombre: z.string().min(1).max(40).default("Turno"),
   horaInicio: z.number().int().min(0).max(23),
   minutoInicio: z.number().int().min(0).max(59).default(0),
   duracionMin: z.number().int().min(30).max(24 * 60),
@@ -33,15 +36,14 @@ const Body = z.object({
   turnos: z.array(TurnoInput).min(1).max(4),
 });
 
-// El máximo de 4 turnos es deliberado: planta con 4 cuadrillas rotando es el
-// caso más extremo razonable. Si crece, subir el `max` acá y el guard de UI.
-
 export async function GET() {
   const auth = await requireSessionApi();
   if ("response" in auth) return auth.response;
 
+  // Lectura a través de la lib para aplicar el revert perezoso de la extensión.
+  const cfg = await obtenerConfiguracionPlanta();
   const turnos = await prisma.turno.findMany({ orderBy: { orden: "asc" } });
-  return NextResponse.json({ turnos });
+  return NextResponse.json({ turnos, configuracion: cfg });
 }
 
 export async function PUT(req: NextRequest) {
@@ -57,6 +59,12 @@ export async function PUT(req: NextRequest) {
   const ordenes = parsed.data.turnos.map((t) => t.orden);
   if (new Set(ordenes).size !== ordenes.length) {
     return NextResponse.json({ error: "Hay turnos con el mismo número de orden" }, { status: 400 });
+  }
+
+  // Validar solape y total ≤ 24 h.
+  const errorValidacion = validarTurnos(parsed.data.turnos);
+  if (errorValidacion) {
+    return NextResponse.json({ error: errorValidacion }, { status: 400 });
   }
 
   const turnos = await prisma.$transaction(async (tx) => {

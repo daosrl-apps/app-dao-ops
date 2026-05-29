@@ -82,6 +82,28 @@ async function main() {
     await prisma.user.create({ data });
     console.log(`Admin creado (${tienePassword ? "username+password" : ""}${tienePassword && tienePin ? " + " : ""}${tienePin ? "PIN" : ""}).`);
   }
+
+  await seedTurnos();
+}
+
+/**
+ * Seed de los 3 turnos por defecto (Mañana 06-14, Tarde 14-22, Noche 22-06),
+ * solo si la tabla está vacía. No pisa una configuración existente.
+ */
+async function seedTurnos() {
+  const count = await prisma.turno.count();
+  if (count > 0) {
+    console.log(`Turnos: ya hay ${count} configurado(s) — no se tocan.`);
+    return;
+  }
+  await prisma.turno.createMany({
+    data: [
+      { orden: 1, nombre: "Mañana", horaInicio: 6, minutoInicio: 0, duracionMin: 480, habilitado: true },
+      { orden: 2, nombre: "Tarde", horaInicio: 14, minutoInicio: 0, duracionMin: 480, habilitado: true },
+      { orden: 3, nombre: "Noche", horaInicio: 22, minutoInicio: 0, duracionMin: 480, habilitado: true },
+    ],
+  });
+  console.log("Turnos: creados 3 turnos por defecto (Mañana/Tarde/Noche).");
 }
 
 main()

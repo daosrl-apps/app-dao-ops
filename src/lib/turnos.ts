@@ -1,16 +1,24 @@
 /**
  * Lógica de turnos de trabajo.
  *
- * Un Turno define hora de inicio (HH:MM local) + duración en minutos. Una
- * jornada laboral puede estar compuesta por 1 a 4 turnos. Los turnos
- * contiguos (donde el fin de uno coincide con el inicio del siguiente) se
- * fusionan en una sola "ventana de jornada": la fábrica trabaja sin pausa
- * de punta a punta. Si la suma cubre las 24 h, la jornada es continua y
- * nunca corta.
+ * Un Turno define nombre + hora de inicio (HH:MM local) + duración en minutos.
+ * Por defecto hay 3 turnos que cubren las 24 h:
+ *   Mañana 06:00–14:00, Tarde 14:00–22:00, Noche 22:00–06:00 (cruza medianoche).
  *
- * Las OTs deben caber dentro de una VENTANA (no de un turno individual).
- * Si una OT no entra, se ofrece partirla y continuarla en el inicio de la
- * próxima ventana.
+ * Los turnos contiguos (donde el fin de uno coincide con el inicio del
+ * siguiente) se fusionan en una sola "ventana de jornada": la fábrica trabaja
+ * sin pausa de punta a punta. Con los 3 turnos por defecto la jornada es
+ * continua (24 h) y nunca corta.
+ *
+ * El inicio del primer turno habilitado = apertura de fábrica; el fin del
+ * último = cierre. Las OTs deben caber dentro de una VENTANA (no de un turno
+ * individual). Si una OT no entra, se ofrece partirla y continuarla en el
+ * inicio de la próxima ventana.
+ *
+ * "Extender turno": reconfigura los turnos a Mañana 06:00–12:00 / Tarde
+ * 12:00–00:00 y deshabilita Noche. Si se activó "solo una vez", al cambiar el
+ * día calendario se restaura la configuración previa (revert perezoso en
+ * `obtenerTurnos`).
  */
 import { prisma } from "@/lib/db";
 
@@ -24,6 +32,180 @@ export interface TurnoSlot {
 export interface TurnoConfig {
   id: string;
   orden: number;
+  nombre: string;
+  horaInicio: number;
+  minutoInicio: number;
+  duracionMin: number;
+  habilitado: boolean;
+}
+
+/// Turnos por defecto cuando la tabla está vacía (primer arranque / seed).
+export const TURNOS_DEFAULT: Omit<TurnoConfig, "id">[] = [
+  { orden: 1, nombre: "Mañana", horaInicio: 6, minutoInicio: 0, duracionMin: 480, habilitado: true },
+  { orden: 2, nombre: "Tarde", horaInicio: 14, minutoInicio: 0, duracionMin: 480, habilitado: true },
+  { orden: 3, nombre: "Noche", horaInicio: 22, minutoInicio: 0, duracionMin: 480, habilitado: true },
+];
+
+/// Configuración de turnos cuando "Extender turno" está activo.
+/// Mañana 06:00–12:00 (6 h), Tarde 12:00–00:00 (12 h), Noche deshabilitado.
+export const TURNOS_EXTENDIDOS: Omit<TurnoConfig, "id">[] = [
+  { orden: 1, nombre: "Mañana", horaInicio: 6, minutoInicio: 0, duracionMin: 360, habilitado: true },
+  { orden: 2, nombre: "Tarde", horaInicio: 12, minutoInicio: 0, duracionMin: 720, habilitado: true },
+  { orden: 3, nombre: "Noche", horaInicio: 22, minutoInicio: 0, duracionMin: 480, habilitado: false },
+];
+
+/**
+ * Lee la config singleton de la planta (la crea si no existe).
+ */
+export async function obtenerConfiguracionPlanta() {
+  return prisma.configuracionPlanta.upsert({
+    where: { id: "default" },
+    update: {},
+    create: { id: "default" },
+  });
+}
+
+/**
+ * Revert perezoso del modo extendido: si está activo con "solo una vez" y la
+ * fecha de activación es de un día calendario anterior a hoy, restaura la
+ * configuración previa y limpia el flag. Devuelve true si revirtió.
+ */
+async function revertirExtensionSiCorresponde(): Promise<boolean> {
+  const cfg = await obtenerConfiguracionPlanta();
+  if (!cfg.extenderActivo || !cfg.extenderSoloUnaVez || !cfg.extenderFecha) {
+    return false;
+  }
+  if (mismoDiaLocal(cfg.extenderFecha, new Date())) {
+    return false; // todavía es el mismo día: sigue extendido.
+  }
+  await restaurarConfigPrevia(cfg.configPrevia);
+  return true;
+}
+
+/**
+ * Lee los turnos habilitados de la DB, ordenados por `orden` asc.
+ * Antes de leer, aplica el revert perezoso del modo extendido.
+ * Si la tabla está vacía (primer arranque), devuelve los turnos por defecto.
+ */
+export async function obtenerTurnos(): Promise<TurnoConfig[]> {
+  await revertirExtensionSiCorresponde();
+  const turnos = await prisma.turno.findMany({
+    where: { habilitado: true },
+    orderBy: { orden: "asc" },
+  });
+  if (turnos.length === 0) {
+    return TURNOS_DEFAULT.map((t, i) => ({ id: `default-${i + 1}`, ...t }));
+  }
+  return turnos;
+}
+
+/**
+ * Lee TODOS los turnos (habilitados o no) para la pantalla de configuración.
+ * Aplica el revert perezoso antes de leer.
+ */
+export async function obtenerTurnosTodos(): Promise<TurnoConfig[]> {
+  await revertirExtensionSiCorresponde();
+  const turnos = await prisma.turno.findMany({ orderBy: { orden: "asc" } });
+  if (turnos.length === 0) {
+    return TURNOS_DEFAULT.map((t, i) => ({ id: `default-${i + 1}`, ...t }));
+  }
+  return turnos;
+}
+
+// =============================================================================
+// Extender turno
+// =============================================================================
+
+/**
+ * Activa el modo extendido: snapshot de la config actual + reescritura de los
+ * turnos a la config extendida. `soloUnaVez` controla el revert automático al
+ * cambiar el día calendario.
+ */
+export async function aplicarExtension(soloUnaVez: boolean): Promise<void> {
+  const actuales = await prisma.turno.findMany({ orderBy: { orden: "asc" } });
+  const snapshot = (actuales.length > 0
+    ? actuales.map((t) => ({
+        orden: t.orden,
+        nombre: t.nombre,
+        horaInicio: t.horaInicio,
+        minutoInicio: t.minutoInicio,
+        duracionMin: t.duracionMin,
+        habilitado: t.habilitado,
+      }))
+    : TURNOS_DEFAULT);
+
+  await prisma.$transaction(async (tx) => {
+    await tx.turno.deleteMany({});
+    for (const t of TURNOS_EXTENDIDOS) {
+      await tx.turno.create({ data: t });
+    }
+    await tx.configuracionPlanta.upsert({
+      where: { id: "default" },
+      update: {
+        extenderActivo: true,
+        extenderSoloUnaVez: soloUnaVez,
+        extenderFecha: new Date(),
+        configPrevia: snapshot as unknown as object,
+      },
+      create: {
+        id: "default",
+        extenderActivo: true,
+        extenderSoloUnaVez: soloUnaVez,
+        extenderFecha: new Date(),
+        configPrevia: snapshot as unknown as object,
+      },
+    });
+  });
+}
+
+/**
+ * Revierte el modo extendido manualmente, restaurando la config previa.
+ */
+export async function revertirExtension(): Promise<void> {
+  const cfg = await obtenerConfiguracionPlanta();
+  await restaurarConfigPrevia(cfg.configPrevia);
+}
+
+async function restaurarConfigPrevia(configPrevia: unknown): Promise<void> {
+  const previos = Array.isArray(configPrevia)
+    ? (configPrevia as Omit<TurnoConfig, "id">[])
+    : TURNOS_DEFAULT;
+  await prisma.$transaction(async (tx) => {
+    await tx.turno.deleteMany({});
+    for (const t of previos) {
+      await tx.turno.create({
+        data: {
+          orden: t.orden,
+          nombre: t.nombre,
+          horaInicio: t.horaInicio,
+          minutoInicio: t.minutoInicio,
+          duracionMin: t.duracionMin,
+          habilitado: t.habilitado,
+        },
+      });
+    }
+    await tx.configuracionPlanta.upsert({
+      where: { id: "default" },
+      update: { extenderActivo: false, extenderSoloUnaVez: false, extenderFecha: null, configPrevia: undefined },
+      create: { id: "default" },
+    });
+  });
+}
+
+function mismoDiaLocal(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+// =============================================================================
+// Validación de configuración (no-solape, total ≤ 24 h)
+// =============================================================================
+
+export interface TurnoValidable {
+  orden: number;
   horaInicio: number;
   minutoInicio: number;
   duracionMin: number;
@@ -31,27 +213,52 @@ export interface TurnoConfig {
 }
 
 /**
- * Lee los turnos habilitados de la DB, ordenados por `orden` asc.
- * Si la tabla está vacía (primer arranque), devuelve un turno default 6-14.
+ * Valida que los turnos habilitados no se solapen entre sí y que la suma de
+ * duraciones no exceda 24 h. Los turnos pueden cruzar medianoche; se proyectan
+ * sobre una línea de tiempo circular de 24 h (1440 min) para detectar solapes.
+ * Devuelve un mensaje de error o null si todo OK.
  */
-export async function obtenerTurnos(): Promise<TurnoConfig[]> {
-  const turnos = await prisma.turno.findMany({
-    where: { habilitado: true },
-    orderBy: { orden: "asc" },
-  });
-  if (turnos.length === 0) {
-    return [
-      {
-        id: "default",
-        orden: 1,
-        horaInicio: 6,
-        minutoInicio: 0,
-        duracionMin: 480,
-        habilitado: true,
-      },
-    ];
+export function validarTurnos(turnos: TurnoValidable[]): string | null {
+  const habilitados = turnos.filter((t) => t.habilitado);
+  if (habilitados.length === 0) return null;
+
+  const totalMin = habilitados.reduce((acc, t) => acc + t.duracionMin, 0);
+  if (totalMin > 24 * 60) {
+    return "La suma de las duraciones de los turnos no puede superar las 24 horas.";
   }
-  return turnos;
+
+  // Cada turno → intervalo [inicio, inicio+dur) en minutos. Para detectar
+  // solapes con turnos que cruzan medianoche, comparamos en una ventana de
+  // 48 h replicando cada intervalo +1440.
+  const intervalos = habilitados.map((t) => {
+    const inicio = t.horaInicio * 60 + t.minutoInicio;
+    return { inicio, fin: inicio + t.duracionMin };
+  });
+
+  for (let i = 0; i < intervalos.length; i++) {
+    for (let j = i + 1; j < intervalos.length; j++) {
+      if (seSolapanCirculares(intervalos[i], intervalos[j])) {
+        return "Hay turnos que se solapan. Revisá los horarios de inicio y las duraciones.";
+      }
+    }
+  }
+  return null;
+}
+
+function seSolapanCirculares(
+  a: { inicio: number; fin: number },
+  b: { inicio: number; fin: number },
+): boolean {
+  // Replicamos cada intervalo en [0,1440) y [1440,2880) para cubrir el cruce de
+  // medianoche, y chequeamos solape de cualquier par de réplicas.
+  const repsA = [a, { inicio: a.inicio + 1440, fin: a.fin + 1440 }];
+  const repsB = [b, { inicio: b.inicio + 1440, fin: b.fin + 1440 }];
+  for (const ra of repsA) {
+    for (const rb of repsB) {
+      if (ra.inicio < rb.fin && rb.inicio < ra.fin) return true;
+    }
+  }
+  return false;
 }
 
 /**
