@@ -20,6 +20,7 @@ import { AlertTriangle, Check, Droplets, Paintbrush, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { formatFechaHora as fmtFechaHoraUtil } from "@/lib/utils";
 
 type Tipo = "LAVADO" | "PINTURA";
 
@@ -601,5 +602,5 @@ function formatHora(d: Date) {
   return d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
 }
 function formatFechaHora(d: Date) {
-  return d.toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" });
+  return fmtFechaHoraUtil(d);
 }

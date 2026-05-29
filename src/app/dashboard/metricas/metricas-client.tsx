@@ -4,6 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { ArrowDown, ArrowRight, ArrowUp, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { formatFecha } from "@/lib/utils";
 import type { MetricasSnapshot, Delta } from "@/lib/metricas";
 
 const COLOR_TO_HEX: Record<string, string> = {
@@ -100,40 +101,44 @@ export function MetricasClient({
       </p>
 
       {/* Selector de rango */}
-      <div className="rounded-2xl bg-white shadow-sm border border-slate-200 p-4 mb-6 flex flex-wrap items-end gap-3">
-        <button
-          onClick={aplicarSemana}
-          className="h-11 px-4 rounded-xl border border-slate-300 bg-white text-sm font-medium hover:bg-slate-50"
-        >
-          Última semana
-        </button>
-        <button
-          onClick={aplicarMes}
-          className="h-11 px-4 rounded-xl border border-slate-300 bg-white text-sm font-medium hover:bg-slate-50"
-        >
-          Último mes
-        </button>
-        <label className="flex flex-col gap-1">
-          <span className="text-xs text-slate-500 font-medium">Desde</span>
-          <Input
-            type="date"
-            value={desde}
-            onChange={(e) => setDesde(e.target.value)}
-            className="h-11"
-          />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-xs text-slate-500 font-medium">Hasta</span>
-          <Input
-            type="date"
-            value={hasta}
-            onChange={(e) => setHasta(e.target.value)}
-            className="h-11"
-          />
-        </label>
+      <div className="rounded-2xl bg-white shadow-sm border border-slate-200 p-4 mb-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+        <div className="flex gap-2">
+          <button
+            onClick={aplicarSemana}
+            className="h-11 flex-1 sm:flex-none px-4 rounded-xl border border-slate-300 bg-white text-sm font-medium hover:bg-slate-50"
+          >
+            Última semana
+          </button>
+          <button
+            onClick={aplicarMes}
+            className="h-11 flex-1 sm:flex-none px-4 rounded-xl border border-slate-300 bg-white text-sm font-medium hover:bg-slate-50"
+          >
+            Último mes
+          </button>
+        </div>
+        <div className="flex gap-3">
+          <label className="flex flex-1 flex-col gap-1 sm:flex-none">
+            <span className="text-xs text-slate-500 font-medium">Desde</span>
+            <Input
+              type="date"
+              value={desde}
+              onChange={(e) => setDesde(e.target.value)}
+              className="h-11 w-full"
+            />
+          </label>
+          <label className="flex flex-1 flex-col gap-1 sm:flex-none">
+            <span className="text-xs text-slate-500 font-medium">Hasta</span>
+            <Input
+              type="date"
+              value={hasta}
+              onChange={(e) => setHasta(e.target.value)}
+              className="h-11 w-full"
+            />
+          </label>
+        </div>
         <button
           onClick={() => aplicarRango(desde, hasta)}
-          className="h-11 px-5 rounded-xl bg-[#1627b1] text-white text-sm font-medium hover:bg-[#1627b1]/90"
+          className="h-11 w-full sm:w-auto px-5 rounded-xl bg-[#1627b1] text-white text-sm font-medium hover:bg-[#1627b1]/90"
         >
           Aplicar
         </button>
@@ -202,16 +207,18 @@ export function MetricasClient({
           <table className="w-full text-sm">
             <thead className="bg-slate-100 text-xs uppercase text-slate-600">
               <tr>
-                {columnas.fecha && <th className="px-3 py-2 text-left">Fecha</th>}
-                {columnas.cliente && <th className="px-3 py-2 text-left">Cliente</th>}
-                {columnas.articulo && <th className="px-3 py-2 text-left">Artículo</th>}
-                {columnas.color && <th className="px-3 py-2 text-left">Color</th>}
-                {columnas.cantidad && <th className="px-3 py-2 text-right">Cantidad</th>}
-                {columnas.duracionTeoricaMin && (
-                  <th className="px-3 py-2 text-right">Teórica (min)</th>
+                {columnas.fecha && (
+                  <th className="px-3 py-2 text-center whitespace-nowrap">Fecha</th>
                 )}
-                {columnas.duracionRealMin && <th className="px-3 py-2 text-right">Real (min)</th>}
-                {columnas.desviacionPct && <th className="px-3 py-2 text-right">Δ%</th>}
+                {columnas.cliente && <th className="px-3 py-2 text-center">Cliente</th>}
+                {columnas.articulo && <th className="px-3 py-2 text-center">Artículo</th>}
+                {columnas.color && <th className="px-3 py-2 text-center">Color</th>}
+                {columnas.cantidad && <th className="px-3 py-2 text-center">Cantidad</th>}
+                {columnas.duracionTeoricaMin && (
+                  <th className="px-3 py-2 text-center">Teórica (min)</th>
+                )}
+                {columnas.duracionRealMin && <th className="px-3 py-2 text-center">Real (min)</th>}
+                {columnas.desviacionPct && <th className="px-3 py-2 text-center">Δ%</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -224,23 +231,27 @@ export function MetricasClient({
               ) : (
                 filas.map((f, i) => (
                   <tr key={i}>
-                    {columnas.fecha && <td className="px-3 py-2">{f.fecha}</td>}
-                    {columnas.cliente && <td className="px-3 py-2">{f.cliente}</td>}
-                    {columnas.articulo && <td className="px-3 py-2">{f.articulo}</td>}
-                    {columnas.color && <td className="px-3 py-2">{f.color}</td>}
+                    {columnas.fecha && (
+                      <td className="px-3 py-2 text-center whitespace-nowrap">
+                        {formatFecha(f.fecha)}
+                      </td>
+                    )}
+                    {columnas.cliente && <td className="px-3 py-2 text-center">{f.cliente}</td>}
+                    {columnas.articulo && <td className="px-3 py-2 text-center">{f.articulo}</td>}
+                    {columnas.color && <td className="px-3 py-2 text-center">{f.color}</td>}
                     {columnas.cantidad && (
-                      <td className="px-3 py-2 text-right">{f.cantidad}</td>
+                      <td className="px-3 py-2 text-center">{f.cantidad}</td>
                     )}
                     {columnas.duracionTeoricaMin && (
-                      <td className="px-3 py-2 text-right">{f.duracionTeoricaMin}</td>
+                      <td className="px-3 py-2 text-center">{f.duracionTeoricaMin}</td>
                     )}
                     {columnas.duracionRealMin && (
-                      <td className="px-3 py-2 text-right">{f.duracionRealMin}</td>
+                      <td className="px-3 py-2 text-center">{f.duracionRealMin}</td>
                     )}
                     {columnas.desviacionPct && (
                       <td
                         className={
-                          "px-3 py-2 text-right font-medium " +
+                          "px-3 py-2 text-center font-medium " +
                           (f.desviacionPct > 15
                             ? "text-red-700"
                             : f.desviacionPct < 0
@@ -426,11 +437,7 @@ function labelColumna(k: string) {
 }
 
 function fmtFecha(iso: string) {
-  return new Date(iso).toLocaleDateString("es-AR", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  return formatFecha(iso);
 }
 function addDays(d: Date, n: number): Date {
   const r = new Date(d);

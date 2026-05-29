@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Droplets, Paintbrush } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/auth-guards";
+import { formatFechaHora } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -198,7 +199,7 @@ function formatDelta(min: number): string {
 }
 
 function formatDT(d: Date) {
-  return d.toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" });
+  return formatFechaHora(d);
 }
 function formatHora(d: Date) {
   return d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });

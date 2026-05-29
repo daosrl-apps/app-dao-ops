@@ -13,6 +13,7 @@ import {
   Trash2,
   XCircle,
 } from "lucide-react";
+import { formatFecha } from "@/lib/utils";
 
 export interface OrdenView {
   id: string;
@@ -171,7 +172,7 @@ function TipoBadge({ tipo }: { tipo: "LAVADO" | "PINTURA" }) {
 function formatRango(inicioISO: string, finISO: string): string {
   const inicio = new Date(inicioISO);
   const fin = new Date(finISO);
-  const fecha = (d: Date) => d.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit" });
+  const fecha = (d: Date) => formatFecha(d);
   const hora = (d: Date) => d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
   const mismoDia =
     inicio.getFullYear() === fin.getFullYear() &&

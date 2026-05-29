@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Droplets, Paintbrush, Smartphone, ZoomIn, ZoomOut } from "lucide-react";
+import { formatFecha, formatFechaHora } from "@/lib/utils";
 
 export interface GanttOT {
   id: string;
@@ -226,13 +227,12 @@ function inicioDia(d: Date): Date {
   return x;
 }
 function fechaLarga(d: Date): string {
-  return d.toLocaleDateString("es-AR", { weekday: "short", day: "2-digit", month: "2-digit" });
+  return formatFecha(d);
 }
 function pad(n: number) {
   return n.toString().padStart(2, "0");
 }
 function rango(inicioISO: string, finISO: string): string {
-  const f = (iso: string) =>
-    new Date(iso).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" });
+  const f = (iso: string) => formatFechaHora(iso);
   return `${f(inicioISO)} → ${f(finISO)}`;
 }
