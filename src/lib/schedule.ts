@@ -29,6 +29,28 @@ export const GAP_BASE_SEG = 15 * 60;
 /// Tiempo adicional si la próxima OT cambia de color respecto de la anterior.
 export const CAMBIO_COLOR_SEG = 30 * 60;
 
+/**
+ * Redondea una fecha hacia ARRIBA al minuto entero más próximo.
+ *
+ * El `finTeorico` de una OT casi nunca cae justo en un minuto (las duraciones
+ * tienen segundos), pero el formulario de carga maneja la hora con granularidad
+ * de minuto (HH:MM) y descarta los segundos al enviar. Si el mínimo permitido
+ * fuese `14:23:45`, el form mandaría `14:23:00` y el server lo rechazaría por
+ * solapamiento. Redondeando el mínimo a `14:24:00` evitamos ese off-by-segundos.
+ */
+export function ceilAMinuto(fecha: Date): Date {
+  const MIN_MS = 60_000;
+  return new Date(Math.ceil(fecha.getTime() / MIN_MS) * MIN_MS);
+}
+
+/**
+ * Mínimo horario de inicio para una OT nueva, dado el `finTeorico` de la última
+ * OT activa y el gap aplicable. Redondeado al minuto (ver `ceilAMinuto`).
+ */
+export function minimoInicio(finTeoricoUltima: Date, gapSeg: number): Date {
+  return ceilAMinuto(new Date(finTeoricoUltima.getTime() + gapSeg * 1000));
+}
+
 // =============================================================================
 // Tiempo de pintura
 // =============================================================================

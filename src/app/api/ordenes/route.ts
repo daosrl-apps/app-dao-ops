@@ -34,6 +34,7 @@ import {
   duracionItem,
   GAP_BASE_SEG,
   CAMBIO_COLOR_SEG,
+  minimoInicio,
   type ItemCalculable,
 } from "@/lib/schedule";
 import { obtenerTurnos, evaluarOrdenContraTurno } from "@/lib/turnos";
@@ -121,7 +122,7 @@ export async function POST(req: NextRequest) {
       const cambiaColor = ultima.color.trim().toLowerCase() !== data.color.trim().toLowerCase();
       if (cambiaColor) gapSeg = GAP_BASE_SEG + CAMBIO_COLOR_SEG;
     }
-    const minimo = new Date(ultima.finTeorico.getTime() + gapSeg * 1000);
+    const minimo = minimoInicio(ultima.finTeorico, gapSeg);
     if (inicio.getTime() < minimo.getTime()) {
       return NextResponse.json(
         {

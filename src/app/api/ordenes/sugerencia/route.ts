@@ -21,7 +21,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireSessionApi } from "@/lib/auth-guards";
-import { GAP_BASE_SEG, CAMBIO_COLOR_SEG } from "@/lib/schedule";
+import { GAP_BASE_SEG, CAMBIO_COLOR_SEG, minimoInicio } from "@/lib/schedule";
 
 export async function GET(req: NextRequest) {
   const auth = await requireSessionApi(["SUPERVISOR", "ADMIN"]);
@@ -67,7 +67,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const sugerido = new Date(ultima.finTeorico.getTime() + gapSeg * 1000);
+  const sugerido = minimoInicio(ultima.finTeorico, gapSeg);
   return NextResponse.json({
     sugerido: sugerido.toISOString(),
     minimo: sugerido.toISOString(),
