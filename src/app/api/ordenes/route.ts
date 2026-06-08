@@ -11,7 +11,7 @@
  *     cantidad: number,
  *     inicioProgramado: ISOString,
  *     piezasPorPercha?: number,   // solo LAVADO
- *     velocidadLavado?: number,   // solo LAVADO
+ *     velocidadLavado?: number,   // solo LAVADO, en m/min
  *     // Si la OT excede el turno, el cliente puede solicitar split:
  *     split?: {
  *       cantidadHoy: number,      // piezas que se completan en este turno

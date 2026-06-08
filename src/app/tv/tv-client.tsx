@@ -219,7 +219,7 @@ function RowActual({
             item.piezasPorPercha != null &&
             item.velocidadLavado != null && (
               <p className="text-2xl md:text-3xl font-bold mt-1 text-slate-200">
-                {item.piezasPorPercha}/percha · {item.velocidadLavado} m/s
+                {item.piezasPorPercha}/percha · {item.velocidadLavado} m/min
               </p>
             )
           )}

@@ -210,7 +210,7 @@ function OrdenPendiente({
         {item.tipo === "LAVADO" &&
           item.piezasPorPercha != null &&
           item.velocidadLavado != null &&
-          ` · ${item.piezasPorPercha}/percha · ${item.velocidadLavado} m/s`}
+          ` · ${item.piezasPorPercha}/percha · ${item.velocidadLavado} m/min`}
       </p>
       <button
         onClick={onIniciar}
@@ -269,7 +269,7 @@ function OrdenEnCurso({
           item.piezasPorPercha != null &&
           item.velocidadLavado != null && (
             <p className="text-2xl md:text-3xl font-bold text-slate-300 mt-1">
-              {item.piezasPorPercha}/percha · {item.velocidadLavado} m/s
+              {item.piezasPorPercha}/percha · {item.velocidadLavado} m/min
             </p>
           )}
         <p className="text-xl font-semibold text-slate-400 mt-1">{item.cantidad} piezas</p>

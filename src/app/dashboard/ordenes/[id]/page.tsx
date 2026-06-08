@@ -61,7 +61,7 @@ export default async function OrdenDetailPage({
         {ot.cantidad} piezas
         {ot.tipo === "PINTURA" && ` · ${ot.color}`}
         {ot.tipo === "LAVADO" && ot.piezasPorPercha != null && ot.velocidadLavado != null && (
-          <> · {ot.piezasPorPercha}/percha · {ot.velocidadLavado} m/s</>
+          <> · {ot.piezasPorPercha}/percha · {ot.velocidadLavado} m/min</>
         )}
       </p>
 

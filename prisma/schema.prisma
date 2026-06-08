@@ -163,7 +163,7 @@ model OrdenTrabajo {
   cantidad           Int
   /// Solo aplica a LAVADO.
   piezasPorPercha    Int?
-  /// Solo aplica a LAVADO. Rango 0.1..3.0 m/s.
+  /// Solo aplica a LAVADO. Velocidad del circuito en m/min. Rango 0.1..3.0.
   velocidadLavado    Float?
   /// Snapshot de configPerchas del Articulo al crear la OT (para no perder
   /// trazabilidad si después se edita el maestro).

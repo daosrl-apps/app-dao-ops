@@ -11,12 +11,10 @@
 
 // ---- Constantes del lavado (sección 5.4) -----------------------------------
 
-/// Largo total de la línea de lavado (circuito cerrado).
+/// Largo total de la línea de lavado (circuito cerrado), en metros.
 export const LARGO_LAVADO_M = 84;
-/// Cantidad de perchas distribuidas uniformemente.
+/// Cantidad de perchas distribuidas uniformemente sobre el circuito.
 export const PERCHAS_LAVADO = 200;
-/// Separación entre perchas: 84 / 200 = 0.42 m.
-export const SEPARACION_PERCHAS_M = LARGO_LAVADO_M / PERCHAS_LAVADO;
 
 // ---- Gap entre OTs (regla del 2026-05-27) ---------------------------------
 //
@@ -53,24 +51,31 @@ export function tiempoPinturaSeg(cantidadPiezas: number, piezasPorHora: number):
 // =============================================================================
 
 /**
- * perchas_necesarias = techo(cantidad / piezas_por_percha)
- * tiempo_lavado (seg) = [ 84 + (perchas_necesarias - 1) * 0.42 ] / velocidad
+ * Modelo proporcional por "vueltas" del circuito cerrado:
  *
- * La fórmula es válida incluso si perchas_necesarias > 200 (el "tren" de
- * perchas es más largo que la línea física pero el circuito no para).
+ *   piezas_por_vuelta = perchas (200) * piezas_por_percha
+ *   tiempo_por_vuelta (min) = largo (84 m) / velocidad (m/min)
+ *   tiempo_total (seg) = (cantidad / piezas_por_vuelta) * tiempo_por_vuelta * 60
+ *
+ * Ej: 400 pzs, 2/percha (= 400 por vuelta), 0.5 m/min
+ *   → (400/400) * (84/0.5) = 168 min = 10080 seg.
+ *
+ * Es fraccionado: una carga que no completa una vuelta entera cuenta su
+ * fracción (200 pzs → media vuelta → 84 min). `velocidadMin` está en m/min.
  */
 export function tiempoLavadoSeg(
   cantidadPiezas: number,
   piezasPorPercha: number,
-  velocidadMs: number,
+  velocidadMin: number,
 ): number {
   if (piezasPorPercha <= 0) throw new Error("piezasPorPercha debe ser > 0");
-  if (velocidadMs <= 0) throw new Error("velocidadMs debe ser > 0");
+  if (velocidadMin <= 0) throw new Error("velocidadMin debe ser > 0");
   if (cantidadPiezas < 0) throw new Error("cantidadPiezas debe ser >= 0");
+  if (cantidadPiezas === 0) return 0;
 
-  const perchasNecesarias = Math.ceil(cantidadPiezas / piezasPorPercha);
-  if (perchasNecesarias === 0) return 0;
-  return (LARGO_LAVADO_M + (perchasNecesarias - 1) * SEPARACION_PERCHAS_M) / velocidadMs;
+  const piezasPorVuelta = PERCHAS_LAVADO * piezasPorPercha;
+  const tiempoPorVueltaMin = LARGO_LAVADO_M / velocidadMin;
+  return (cantidadPiezas / piezasPorVuelta) * tiempoPorVueltaMin * 60;
 }
 
 // =============================================================================

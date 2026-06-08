@@ -266,7 +266,7 @@ export function NuevaOrdenClient() {
               </Select>
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-sm font-medium text-slate-700">Velocidad lavado (m/s)</span>
+              <span className="text-sm font-medium text-slate-700">Velocidad lavado (m/min)</span>
               <Select
                 value={velocidadLavado}
                 onChange={(e) => setVelocidadLavado(Number(e.target.value))}
