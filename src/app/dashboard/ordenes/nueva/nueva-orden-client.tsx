@@ -101,19 +101,27 @@ export function NuevaOrdenClient() {
     };
   }, [tipo, color]);
 
+  // Puede ser null mientras el usuario está editando los campos (fecha/hora incompletas).
   const inicioISO = React.useMemo(() => {
     const [y, m, d] = inicioFecha.split("-").map(Number);
     const [h, mi] = inicioHora.split(":").map(Number);
-    return new Date(y, m - 1, d, h, mi, 0, 0).toISOString();
+    if ([y, m, d, h, mi].some((n) => !Number.isFinite(n))) return null;
+    const date = new Date(y, m - 1, d, h, mi, 0, 0);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toISOString();
   }, [inicioFecha, inicioHora]);
 
   // Validación: el inicio elegido no puede ser menor al sugerido (= mínimo).
   const inicioTooEarly = React.useMemo(() => {
-    if (!sugerencia) return false;
+    if (!sugerencia || !inicioISO) return false;
     return new Date(inicioISO).getTime() < new Date(sugerencia.minimo).getTime() - 60_000;
   }, [inicioISO, sugerencia]);
 
   const guardar = async (split?: { cantidadHoy: number }) => {
+    if (!inicioISO) {
+      setError("Ingresá una fecha y hora de inicio válidas.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     const body = {
@@ -165,6 +173,7 @@ export function NuevaOrdenClient() {
     !!articulo &&
     !!cantidad &&
     Number(cantidad) > 0 &&
+    !!inicioISO &&
     !inicioTooEarly &&
     (tipo !== "PINTURA" || !!color || !!articulo?.color);
 
