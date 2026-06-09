@@ -5,6 +5,14 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "dao-ops",
   description: "Daily de línea — pintura en polvo",
+  // iOS "Agregar a inicio": nombre bajo el ícono + apertura fullscreen (sin
+  // barra de Safari), pensado para las tablets/tótems de la planta. El ícono lo
+  // genera Next a partir de src/app/apple-icon.png (apple-touch-icon 180×180).
+  appleWebApp: {
+    capable: true,
+    title: "DAO Ops",
+    statusBarStyle: "default",
+  },
 };
 
 // Tablets fijas en tótems: bloqueamos zoom y orientación para que el operario
