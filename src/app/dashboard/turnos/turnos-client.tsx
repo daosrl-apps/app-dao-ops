@@ -116,7 +116,7 @@ export function TurnosClient({
       {extenderActivo && (
         <div className="flex items-center justify-between gap-3 rounded-2xl border border-amber-300 bg-amber-50 p-4">
           <p className="text-sm font-medium text-amber-900">
-            Modo <b>Extender turno</b> activo (Mañana 06:00–12:00 / Tarde 12:00–00:00).
+            Modo <b>Extender turno</b> activo (Mañana 06:00–18:00 / Tarde 18:00–06:00, la fábrica no cierra).
           </p>
           <Button variant="outline" onClick={revertirExtension} disabled={saving} className="shrink-0">
             <RotateCcw className="h-4 w-4 mr-2" /> Revertir
@@ -278,8 +278,9 @@ function ExtenderDialog({
       <div className="w-full max-w-lg rounded-2xl bg-white p-6 text-slate-900 shadow-2xl">
         <h2 className="text-2xl font-black mb-2">Extender turno</h2>
         <p className="text-slate-600 mb-4">
-          Se va a reconfigurar la jornada a <b>Turno Mañana 06:00–12:00</b> y{" "}
-          <b>Turno Tarde 12:00–00:00</b>. El turno Noche queda deshabilitado.
+          Se va a reconfigurar la jornada a dos turnos de 12 h:{" "}
+          <b>Turno Mañana 06:00–18:00</b> y <b>Turno Tarde 18:00–06:00</b>. El turno
+          Noche queda deshabilitado y la fábrica <b>no cierra</b> ese día (jornada continua de 24 h).
         </p>
         <label className="flex items-center gap-3 mb-6">
           <input

@@ -15,10 +15,10 @@
  * individual). Si una OT no entra, se ofrece partirla y continuarla en el
  * inicio de la próxima ventana.
  *
- * "Extender turno": reconfigura los turnos a Mañana 06:00–12:00 / Tarde
- * 12:00–00:00 y deshabilita Noche. Si se activó "solo una vez", al cambiar el
- * día calendario se restaura la configuración previa (revert perezoso en
- * `obtenerTurnos`).
+ * "Extender turno": reconfigura los turnos a Mañana 06:00–18:00 / Tarde
+ * 18:00–06:00 (dos turnos de 12 h, jornada 24 h, la fábrica no cierra ese día)
+ * y deshabilita Noche. Si se activó "solo una vez", al cambiar el día calendario
+ * se restaura la configuración previa (revert perezoso en `obtenerTurnos`).
  */
 import { prisma } from "@/lib/db";
 
@@ -47,10 +47,11 @@ export const TURNOS_DEFAULT: Omit<TurnoConfig, "id">[] = [
 ];
 
 /// Configuración de turnos cuando "Extender turno" está activo.
-/// Mañana 06:00–12:00 (6 h), Tarde 12:00–00:00 (12 h), Noche deshabilitado.
+/// Mañana 06:00–18:00 (12 h), Tarde 18:00–06:00 (12 h), Noche deshabilitado.
+/// Jornada de 24 h continua: la fábrica no cierra ese día.
 export const TURNOS_EXTENDIDOS: Omit<TurnoConfig, "id">[] = [
-  { orden: 1, nombre: "Mañana", horaInicio: 6, minutoInicio: 0, duracionMin: 360, habilitado: true },
-  { orden: 2, nombre: "Tarde", horaInicio: 12, minutoInicio: 0, duracionMin: 720, habilitado: true },
+  { orden: 1, nombre: "Mañana", horaInicio: 6, minutoInicio: 0, duracionMin: 720, habilitado: true },
+  { orden: 2, nombre: "Tarde", horaInicio: 18, minutoInicio: 0, duracionMin: 720, habilitado: true },
   { orden: 3, nombre: "Noche", horaInicio: 22, minutoInicio: 0, duracionMin: 480, habilitado: false },
 ];
 

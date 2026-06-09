@@ -31,6 +31,11 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL}
       NODE_ENV: ${NODE_ENV:-development}
+      # La planta opera en Argentina. Los turnos se guardan como "hora de reloj"
+      # (06:00, 14:00) y se materializan con la zona local del proceso Node. Sin
+      # esto el contenedor corre en UTC y toda la lógica de turnos queda corrida
+      # 3 h (las OTs caen en huecos fantasma entre ventanas). Ver src/lib/turnos.ts.
+      TZ: America/Argentina/Buenos_Aires
     ports:
       - "3000:3000"
     healthcheck:
