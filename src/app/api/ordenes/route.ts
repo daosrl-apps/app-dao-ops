@@ -15,16 +15,22 @@
  *     // Si la OT excede el turno, el cliente puede solicitar split:
  *     split?: {
  *       cantidadHoy: number,      // piezas que se completan en este turno
- *     }
+ *     },
+ *     // …o forzar que la OT entre completa hoy aunque pase del cierre del
+ *     // turno ("extender hasta terminar"): se crea una sola OT sin continuación.
+ *     forzarCompleto?: boolean
  *   }
  *
  * Reglas:
  *   - El inicioProgramado debe ser >= "mínimo permitido" = fin de la última
  *     OT activa + gap (15 min base, +30 si cambia color). Si no, 409 OVERLAP.
  *   - Si la OT excede el turno donde cae el inicio, se devuelve `needsSplit`
- *     con una sugerencia de cuántas piezas se completan hoy. El usuario
- *     puede reenviar con `split.cantidadHoy` y el sistema crea la padre +
- *     una continuación en el primer turno del día siguiente.
+ *     con una sugerencia de cuántas piezas se completan hoy. El usuario puede:
+ *       · reenviar con `split.cantidadHoy` → padre (hoy) + continuación (mañana).
+ *         La opción "extender turno N horas" del cliente es esto mismo, con una
+ *         `cantidadHoy` calculada a partir de las horas extendidas.
+ *       · reenviar con `forzarCompleto: true` → una sola OT que corre más allá
+ *         del cierre del turno, sin continuación ("extender hasta terminar").
  */
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -53,6 +59,7 @@ const Body = z.object({
     })
     .nullable()
     .optional(),
+  forzarCompleto: z.boolean().optional(),
 });
 
 export async function GET() {
@@ -153,7 +160,7 @@ export async function POST(req: NextRequest) {
   const duracionSegOriginal = computar(data.cantidad);
   const evaluacion = evaluarOrdenContraTurno(turnos, inicio, duracionSegOriginal);
 
-  if (!evaluacion.entra && !data.split) {
+  if (!evaluacion.entra && !data.split && !data.forzarCompleto) {
     const fraccion = duracionSegOriginal > 0 ? evaluacion.fitSeg / duracionSegOriginal : 0;
     const sugerencia = Math.max(0, Math.min(data.cantidad - 1, Math.floor(data.cantidad * fraccion)));
     return NextResponse.json(

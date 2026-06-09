@@ -117,7 +117,7 @@ export function NuevaOrdenClient() {
     return new Date(inicioISO).getTime() < new Date(sugerencia.minimo).getTime() - 60_000;
   }, [inicioISO, sugerencia]);
 
-  const guardar = async (split?: { cantidadHoy: number }) => {
+  const guardar = async (opts?: { cantidadHoy?: number; forzarCompleto?: boolean }) => {
     if (!inicioISO) {
       setError("Ingresá una fecha y hora de inicio válidas.");
       return;
@@ -132,7 +132,8 @@ export function NuevaOrdenClient() {
       inicioProgramado: inicioISO,
       piezasPorPercha: tipo === "LAVADO" ? piezasPorPercha : null,
       velocidadLavado: tipo === "LAVADO" ? velocidadLavado : null,
-      split,
+      split: opts?.cantidadHoy != null ? { cantidadHoy: opts.cantidadHoy } : undefined,
+      forzarCompleto: opts?.forzarCompleto ?? undefined,
     };
     const res = await fetch("/api/ordenes", {
       method: "POST",
@@ -333,13 +334,14 @@ export function NuevaOrdenClient() {
       </div>
 
       {splitInfo && (
-        <SplitDialog
+        <NoEntraDialog
           cantidadTotal={Number(cantidad)}
+          inicioISO={inicioISO}
           info={splitInfo}
           onCancel={() => setSplitInfo(null)}
-          onConfirm={async (cantidadHoy) => {
+          onConfirm={async (payload) => {
             setSplitInfo(null);
-            await guardar({ cantidadHoy });
+            await guardar(payload);
           }}
           submitting={submitting}
         />
@@ -372,76 +374,214 @@ function SugerenciaInfo({ sugerencia }: { sugerencia: Sugerencia }) {
 }
 
 // =============================================================================
-// SplitDialog
+// NoEntraDialog — la OT no entra en el turno: partir / extender N h / completar
 // =============================================================================
 
-function SplitDialog({
+type ConfirmPayload = { cantidadHoy?: number; forzarCompleto?: boolean };
+type Modo = "partir" | "extender" | "completar";
+
+function NoEntraDialog({
   cantidadTotal,
+  inicioISO,
   info,
   onCancel,
   onConfirm,
   submitting,
 }: {
   cantidadTotal: number;
+  inicioISO: string | null;
   info: SplitInfo;
   onCancel: () => void;
-  onConfirm: (cantidadHoy: number) => void;
+  onConfirm: (payload: ConfirmPayload) => void;
   submitting: boolean;
 }) {
+  // fit + resto = duración total de la OT (en segundos).
+  const durTotalSeg = info.fitSeg + info.restoSeg;
+  const [modo, setModo] = React.useState<Modo>("partir");
+
+  // --- Opción 1: partir por cantidad -----------------------------------------
   const [cantidadHoy, setCantidadHoy] = React.useState<string>(String(info.sugerenciaCantidadHoy));
-  const valido =
-    /^\d+$/.test(cantidadHoy) &&
-    Number(cantidadHoy) > 0 &&
-    Number(cantidadHoy) < cantidadTotal;
-  const resto = valido ? cantidadTotal - Number(cantidadHoy) : null;
+  const partirValido =
+    /^\d+$/.test(cantidadHoy) && Number(cantidadHoy) > 0 && Number(cantidadHoy) < cantidadTotal;
+  const restoPartir = partirValido ? cantidadTotal - Number(cantidadHoy) : null;
+
+  // --- Opción 2: extender el turno N horas -----------------------------------
+  const [horas, setHoras] = React.useState<string>("1");
+  const horasValido = /^\d+(\.\d+)?$/.test(horas) && Number(horas) > 0;
+  const horasNum = horasValido ? Number(horas) : 0;
+  // Piezas que entran hoy con la extensión (duración es lineal en la cantidad).
+  const tiempoHoySeg = info.fitSeg + horasNum * 3600;
+  const cantidadHoyExt =
+    durTotalSeg > 0
+      ? Math.max(0, Math.min(cantidadTotal, Math.floor((cantidadTotal * tiempoHoySeg) / durTotalSeg)))
+      : 0;
+  const restoExt = cantidadTotal - cantidadHoyExt; // piezas que pasan al otro día
+  const entraTodoConExtension = restoExt <= 0;
+  const finExtendido = new Date(new Date(info.finTurno).getTime() + horasNum * 3600 * 1000);
+  const extenderValido = horasValido && cantidadHoyExt > 0;
+
+  // --- Opción 3: extender hasta terminar -------------------------------------
+  const finCompleto = inicioISO ? new Date(new Date(inicioISO).getTime() + durTotalSeg * 1000) : null;
+
+  const confirmar = () => {
+    if (modo === "partir") {
+      onConfirm({ cantidadHoy: Number(cantidadHoy) });
+    } else if (modo === "extender") {
+      // Si con la extensión entra todo, es una sola OT completa (sin continuación).
+      if (entraTodoConExtension) onConfirm({ forzarCompleto: true });
+      else onConfirm({ cantidadHoy: cantidadHoyExt });
+    } else {
+      onConfirm({ forzarCompleto: true });
+    }
+  };
+
+  const puedeConfirmar =
+    modo === "partir" ? partirValido : modo === "extender" ? extenderValido : true;
+
+  const etiquetaConfirmar =
+    modo === "partir"
+      ? "Partir y crear las 2 OTs"
+      : modo === "extender"
+        ? entraTodoConExtension
+          ? "Extender turno y crear la OT"
+          : "Extender turno y crear las 2 OTs"
+        : "Extender hasta terminar y crear la OT";
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-6 z-50">
-      <div className="bg-white text-slate-900 rounded-2xl w-full max-w-lg p-6 shadow-2xl">
+      <div className="bg-white text-slate-900 rounded-2xl w-full max-w-lg p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
         <h2 className="text-2xl font-black mb-2">La OT no entra en el turno</h2>
         <p className="text-slate-600 mb-4">
-          El turno termina a las{" "}
-          <b>{formatHora(new Date(info.finTurno))}</b>. La próxima OT puede continuar el{" "}
-          <b>{formatFechaHora(new Date(info.proximoInicio))}</b>.
-        </p>
-        <p className="text-slate-700 mb-3 text-sm">
-          Indicá cuántas piezas se completan en este turno. El resto se carga automáticamente como
-          una OT de continuación.
+          El turno termina a las <b>{formatHora(new Date(info.finTurno))}</b>. Elegí qué hacer:
         </p>
 
-        <label className="flex flex-col gap-1 mb-4">
-          <span className="text-sm font-medium text-slate-700">
-            Cantidad que se completa hoy (de {cantidadTotal})
-          </span>
-          <Input
-            inputMode="numeric"
-            pattern="\d*"
-            autoFocus
-            value={cantidadHoy}
-            onChange={(e) => setCantidadHoy(e.target.value.replace(/\D/g, ""))}
-            className="h-14 text-2xl text-right font-medium"
-          />
-        </label>
+        <div className="space-y-3">
+          {/* Opción 1 — Partir */}
+          <OpcionCard
+            activo={modo === "partir"}
+            onSelect={() => setModo("partir")}
+            titulo="Partir la OT"
+            descripcion="Una parte hoy y el resto como OT de continuación mañana."
+          >
+            <label className="flex flex-col gap-1">
+              <span className="text-sm font-medium text-slate-700">
+                Cantidad que se completa hoy (de {cantidadTotal})
+              </span>
+              <Input
+                inputMode="numeric"
+                pattern="\d*"
+                value={cantidadHoy}
+                onChange={(e) => setCantidadHoy(e.target.value.replace(/\D/g, ""))}
+                className="h-12 text-xl text-right font-medium"
+              />
+            </label>
+            {restoPartir !== null && (
+              <p className="mt-2 text-sm text-slate-600">
+                Hoy: <b>{cantidadHoy}</b> · Continuación ({formatFechaHora(new Date(info.proximoInicio))}):{" "}
+                <b>{restoPartir}</b>.
+              </p>
+            )}
+          </OpcionCard>
 
-        {resto !== null && (
-          <p className="text-sm text-slate-600 mb-4 rounded-xl bg-slate-50 border border-slate-200 p-3">
-            Hoy: <b>{cantidadHoy}</b> piezas · Continuación: <b>{resto}</b> piezas.
-          </p>
-        )}
+          {/* Opción 2 — Extender el turno N horas */}
+          <OpcionCard
+            activo={modo === "extender"}
+            onSelect={() => setModo("extender")}
+            titulo="Extender el turno"
+            descripcion="Estirar el cierre unas horas; lo que no entre pasa al otro día."
+          >
+            <label className="flex flex-col gap-1">
+              <span className="text-sm font-medium text-slate-700">Extender el turno (horas)</span>
+              <Input
+                inputMode="decimal"
+                value={horas}
+                onChange={(e) => setHoras(e.target.value.replace(/[^\d.]/g, ""))}
+                className="h-12 text-xl text-right font-medium"
+              />
+            </label>
+            {horasValido && (
+              <p className="mt-2 text-sm text-slate-600">
+                El turno cierra a las <b>{formatHora(finExtendido)}</b>.{" "}
+                {entraTodoConExtension ? (
+                  <>Entra <b>toda</b> la OT hoy (no pasa nada al otro día).</>
+                ) : (
+                  <>
+                    Hoy: <b>{cantidadHoyExt}</b> · Pasa al otro día (
+                    {formatFechaHora(new Date(info.proximoInicio))}): <b>{restoExt}</b>.
+                  </>
+                )}
+              </p>
+            )}
+          </OpcionCard>
 
-        <div className="flex justify-end gap-3">
-          <Button variant="outline" onClick={onCancel}>
+          {/* Opción 3 — Extender hasta terminar */}
+          <OpcionCard
+            activo={modo === "completar"}
+            onSelect={() => setModo("completar")}
+            titulo="Extender hasta terminar"
+            descripcion="La OT entera se hace hoy, corriendo más allá del cierre. Sin continuación."
+          >
+            {finCompleto && (
+              <p className="text-sm text-slate-600">
+                Las <b>{cantidadTotal}</b> piezas terminan a las <b>{formatFechaHora(finCompleto)}</b>.
+              </p>
+            )}
+          </OpcionCard>
+        </div>
+
+        <div className="flex justify-end gap-3 mt-5">
+          <Button variant="outline" onClick={onCancel} disabled={submitting}>
             <X className="h-4 w-4 mr-1" /> Cancelar
           </Button>
           <Button
-            onClick={() => onConfirm(Number(cantidadHoy))}
-            disabled={!valido || submitting}
+            onClick={confirmar}
+            disabled={!puedeConfirmar || submitting}
             className="bg-[#1627b1] text-white"
             size="lg"
           >
             <Check className="h-5 w-5 mr-2" />
-            Partir y crear las 2 OTs
+            {submitting ? "Guardando…" : etiquetaConfirmar}
           </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OpcionCard({
+  activo,
+  onSelect,
+  titulo,
+  descripcion,
+  children,
+}: {
+  activo: boolean;
+  onSelect: () => void;
+  titulo: string;
+  descripcion: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div
+      onClick={onSelect}
+      className={
+        "rounded-xl border-2 p-4 cursor-pointer transition-colors " +
+        (activo ? "border-[#1627b1] bg-violet-50/40" : "border-slate-200 bg-white hover:border-slate-300")
+      }
+    >
+      <div className="flex items-start gap-3">
+        <span
+          className={
+            "mt-0.5 h-5 w-5 shrink-0 rounded-full border-2 flex items-center justify-center " +
+            (activo ? "border-[#1627b1]" : "border-slate-300")
+          }
+        >
+          {activo && <span className="h-2.5 w-2.5 rounded-full bg-[#1627b1]" />}
+        </span>
+        <div className="flex-1">
+          <p className="font-bold text-slate-900">{titulo}</p>
+          <p className="text-sm text-slate-500">{descripcion}</p>
+          {activo && children && <div className="mt-3">{children}</div>}
         </div>
       </div>
     </div>
