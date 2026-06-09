@@ -17,6 +17,13 @@ jobs:
           node-version: "20"
           cache: "npm"
 
+      # El package-lock.json se genera con npm 11 (estilo lockfileVersion 3 con
+      # las deps opcionales de esbuild que trae vitest). npm 10 interpreta esas
+      # optional deps distinto y `npm ci` falla con "Missing ... from lock file".
+      # Fijamos npm 11 para que coincida con el generador del lockfile.
+      - name: Pin npm 11
+        run: npm install -g npm@11
+
       - name: Install
         run: npm ci --no-audit --no-fund
 
