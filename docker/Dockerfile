@@ -29,12 +29,17 @@ RUN npm prune --omit=dev
 
 # ---------- 3. runner ----------
 FROM node:${NODE_VERSION} AS runner
-RUN apk add --no-cache libc6-compat openssl tini su-exec
+# `tzdata` es imprescindible: Alpine no trae la base de zonas horarias, así que
+# sin esto `TZ=America/Argentina/Buenos_Aires` (compose.yaml) se ignora y Node
+# corre en UTC → toda la lógica de turnos queda corrida 3 h. Ver
+# project_dao_ops_timezone / src/lib/turnos.ts.
+RUN apk add --no-cache libc6-compat openssl tini su-exec tzdata
 WORKDIR /app
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     PORT=3000 \
-    HOSTNAME=0.0.0.0
+    HOSTNAME=0.0.0.0 \
+    TZ=America/Argentina/Buenos_Aires
 
 RUN addgroup -S nodejs && adduser -S nextjs -G nodejs
 
