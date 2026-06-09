@@ -21,8 +21,12 @@ export default async function GanttPage() {
     tipo: o.tipo,
     color: o.color,
     titulo: o.articulo.descripcion?.trim() || o.articulo.codigo,
+    // Proyectado: plan teórico (inicio/fin teóricos).
     inicio: o.inicioTeorico.toISOString(),
     fin: o.finTeorico.toISOString(),
+    // Real: se llenan cuando el operario inicia/finaliza la OT.
+    inicioReal: o.inicioReal?.toISOString() ?? null,
+    finReal: o.finReal?.toISOString() ?? null,
   }));
 
   return (

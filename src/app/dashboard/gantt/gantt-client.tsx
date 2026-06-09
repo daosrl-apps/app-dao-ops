@@ -12,8 +12,12 @@ export interface GanttOT {
   tipo: "LAVADO" | "PINTURA";
   color: string;
   titulo: string;
+  /** Proyectado: inicio/fin teóricos (el plan). */
   inicio: string; // ISO
   fin: string; // ISO
+  /** Real: se llenan al iniciar/finalizar la OT. null si todavía no pasó. */
+  inicioReal: string | null;
+  finReal: string | null;
 }
 
 const ROW_H = 52;
@@ -22,9 +26,37 @@ const PX_MIN = 16;
 const PX_MAX = 320;
 const PX_DEFAULT = 64;
 
+/** Span real de una OT en ms, o null si no tiene inicio real todavía. */
+function spanReal(o: GanttOT, nowMs: number | null): { start: number; end: number } | null {
+  if (!o.inicioReal) return null;
+  const start = new Date(o.inicioReal).getTime();
+  let end: number;
+  if (o.finReal) {
+    end = new Date(o.finReal).getTime();
+  } else if (o.estado === "EN_CURSO" && nowMs != null) {
+    end = nowMs; // en curso: crece hasta ahora
+  } else {
+    end = start; // sin fin y no en curso: lo dibujamos como un punto
+  }
+  return { start, end: Math.max(end, start) };
+}
+
 export function GanttClient({ items }: { items: GanttOT[] }) {
   const router = useRouter();
   const [px, setPx] = React.useState(PX_DEFAULT);
+  const [verProyectado, setVerProyectado] = React.useState(true);
+  const [verReal, setVerReal] = React.useState(true);
+
+  // `now` arranca null para no romper la hidratación (server y cliente coinciden);
+  // tras montar lo seteamos y, si hay OTs en curso, lo refrescamos cada minuto.
+  const [now, setNow] = React.useState<number | null>(null);
+  React.useEffect(() => {
+    setNow(Date.now());
+    const hayEnCurso = items.some((o) => o.estado === "EN_CURSO" && o.inicioReal && !o.finReal);
+    if (!hayEnCurso) return;
+    const id = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, [items]);
 
   if (items.length === 0) {
     return (
@@ -34,12 +66,72 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
     );
   }
 
-  // Rango temporal: desde la hora en punto previa al primer inicio hasta la
-  // hora en punto posterior al último fin.
-  const inicios = items.map((o) => new Date(o.inicio).getTime());
-  const fines = items.map((o) => new Date(o.fin).getTime());
-  const min = piso(new Date(Math.min(...inicios)));
-  const max = techo(new Date(Math.max(...fines)));
+  const reales = items.map((o) => spanReal(o, now));
+
+  // Rango temporal: unión de los segmentos visibles según el filtro.
+  const puntos: number[] = [];
+  items.forEach((o, i) => {
+    if (verProyectado) {
+      puntos.push(new Date(o.inicio).getTime(), new Date(o.fin).getTime());
+    }
+    if (verReal && reales[i]) {
+      puntos.push(reales[i]!.start, reales[i]!.end);
+    }
+  });
+
+  const zoom = (factor: number) =>
+    setPx((p) => Math.min(PX_MAX, Math.max(PX_MIN, Math.round(p * factor))));
+
+  const toolbar = (
+    <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+      <div className="flex items-center gap-2">
+        <FiltroToggle activo={verProyectado} onClick={() => setVerProyectado((v) => !v)}>
+          <span className="inline-block h-3 w-5 rounded-sm bg-emerald-500" />
+          Proyectado
+        </FiltroToggle>
+        <FiltroToggle activo={verReal} onClick={() => setVerReal((v) => !v)}>
+          <span className="inline-block h-3 w-5 rounded-sm border-2 border-dotted border-slate-700" />
+          Real
+        </FiltroToggle>
+      </div>
+      <div className="flex items-center gap-2">
+        <p className="flex items-center gap-2 text-sm text-slate-500 sm:hidden">
+          <Smartphone className="h-4 w-4" /> Girá el celular.
+        </p>
+        <span className="text-sm text-slate-500">Zoom</span>
+        <button
+          onClick={() => zoom(1 / 1.4)}
+          className="rounded-lg border border-slate-300 p-2 text-slate-700 hover:bg-slate-100"
+          aria-label="Alejar"
+        >
+          <ZoomOut className="h-4 w-4" />
+        </button>
+        <button
+          onClick={() => zoom(1.4)}
+          className="rounded-lg border border-slate-300 p-2 text-slate-700 hover:bg-slate-100"
+          aria-label="Acercar"
+        >
+          <ZoomIn className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
+  );
+
+  if (puntos.length === 0) {
+    return (
+      <>
+        {toolbar}
+        <div className="rounded-2xl bg-white shadow-sm border border-slate-200 p-6 text-slate-500">
+          {verReal && !verProyectado
+            ? "Todavía no hay tiempos reales para mostrar."
+            : "Seleccioná al menos una vista (Proyectado o Real)."}
+        </div>
+      </>
+    );
+  }
+
+  const min = piso(new Date(Math.min(...puntos)));
+  const max = techo(new Date(Math.max(...puntos)));
   const totalHoras = Math.max(1, Math.round((max.getTime() - min.getTime()) / 3_600_000));
   const trackW = totalHoras * px;
 
@@ -64,33 +156,9 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
     d0 = next;
   }
 
-  const zoom = (factor: number) =>
-    setPx((p) => Math.min(PX_MAX, Math.max(PX_MIN, Math.round(p * factor))));
-
   return (
     <>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <p className="flex items-center gap-2 text-sm text-slate-500 sm:hidden">
-          <Smartphone className="h-4 w-4" /> Girá el celular para ver mejor.
-        </p>
-        <div className="ml-auto flex items-center gap-2">
-          <span className="text-sm text-slate-500">Zoom</span>
-          <button
-            onClick={() => zoom(1 / 1.4)}
-            className="rounded-lg border border-slate-300 p-2 text-slate-700 hover:bg-slate-100"
-            aria-label="Alejar"
-          >
-            <ZoomOut className="h-4 w-4" />
-          </button>
-          <button
-            onClick={() => zoom(1.4)}
-            className="rounded-lg border border-slate-300 p-2 text-slate-700 hover:bg-slate-100"
-            aria-label="Acercar"
-          >
-            <ZoomIn className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
+      {toolbar}
 
       <div className="overflow-auto max-h-[75vh] rounded-2xl bg-white shadow-sm border border-slate-200">
         <div style={{ width: LABEL_W + trackW }}>
@@ -144,9 +212,10 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
 
           {/* Filas de OTs */}
           {items.map((o, idx) => {
-            const left = xDe(new Date(o.inicio).getTime());
-            const width = Math.max(4, xDe(new Date(o.fin).getTime()) - left);
             const lavado = o.tipo === "LAVADO";
+            const rs = reales[idx];
+            const proyLeft = xDe(new Date(o.inicio).getTime());
+            const proyWidth = Math.max(4, xDe(new Date(o.fin).getTime()) - proyLeft);
             return (
               <div
                 key={o.id}
@@ -175,16 +244,35 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
                       style={{ left: t.x }}
                     />
                   ))}
-                  <button
-                    onClick={() => router.push(`/dashboard/ordenes/${o.id}`)}
-                    className={
-                      "absolute top-1/2 -translate-y-1/2 rounded-md shadow-sm " +
-                      (lavado ? "bg-sky-500 hover:bg-sky-600" : "bg-emerald-500 hover:bg-emerald-600")
-                    }
-                    style={{ left, width, height: 26 }}
-                    title={`#${o.numero} ${o.titulo} · ${rango(o.inicio, o.fin)}`}
-                    aria-label={`OT ${o.numero}`}
-                  />
+
+                  {/* Proyectado: barra sólida */}
+                  {verProyectado && (
+                    <button
+                      onClick={() => router.push(`/dashboard/ordenes/${o.id}`)}
+                      className={
+                        "absolute top-1/2 -translate-y-1/2 z-10 rounded-md shadow-sm " +
+                        (lavado ? "bg-sky-500 hover:bg-sky-600" : "bg-emerald-500 hover:bg-emerald-600")
+                      }
+                      style={{ left: proyLeft, width: proyWidth, height: 16 }}
+                      title={`#${o.numero} ${o.titulo} · Proyectado: ${rango(o.inicio, o.fin)}`}
+                      aria-label={`OT ${o.numero} proyectado`}
+                    />
+                  )}
+
+                  {/* Real: barra con borde punteado, superpuesta */}
+                  {verReal && rs && (
+                    <button
+                      onClick={() => router.push(`/dashboard/ordenes/${o.id}`)}
+                      className="absolute top-1/2 -translate-y-1/2 z-20 rounded-md border-2 border-dotted border-slate-700 bg-white/10"
+                      style={{
+                        left: xDe(rs.start),
+                        width: Math.max(4, xDe(rs.end) - xDe(rs.start)),
+                        height: 26,
+                      }}
+                      title={`#${o.numero} ${o.titulo} · Real: ${rangoMs(rs.start, rs.end)}`}
+                      aria-label={`OT ${o.numero} real`}
+                    />
+                  )}
                 </div>
               </div>
             );
@@ -192,11 +280,45 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
         </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-4 text-sm text-slate-600">
+      <div className="mt-3 flex flex-wrap items-center gap-4 text-sm text-slate-600">
         <Leyenda className="bg-sky-500" label="Lavado" />
         <Leyenda className="bg-emerald-500" label="Pintura" />
+        <span className="text-slate-300">|</span>
+        <span className="inline-flex items-center gap-2">
+          <span className="inline-block h-3 w-5 rounded-sm bg-emerald-500" />
+          Proyectado (sólido)
+        </span>
+        <span className="inline-flex items-center gap-2">
+          <span className="inline-block h-3 w-5 rounded-sm border-2 border-dotted border-slate-700" />
+          Real (línea de puntos)
+        </span>
       </div>
     </>
+  );
+}
+
+function FiltroToggle({
+  activo,
+  onClick,
+  children,
+}: {
+  activo: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      aria-pressed={activo}
+      className={
+        "inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors " +
+        (activo
+          ? "border-[#1627b1] bg-[#1627b1]/5 text-slate-800"
+          : "border-slate-300 bg-white text-slate-400 hover:bg-slate-50")
+      }
+    >
+      {children}
+    </button>
   );
 }
 
@@ -233,6 +355,8 @@ function pad(n: number) {
   return n.toString().padStart(2, "0");
 }
 function rango(inicioISO: string, finISO: string): string {
-  const f = (iso: string) => formatFechaHora(iso);
-  return `${f(inicioISO)} → ${f(finISO)}`;
+  return `${formatFechaHora(inicioISO)} → ${formatFechaHora(finISO)}`;
+}
+function rangoMs(inicioMs: number, finMs: number): string {
+  return `${formatFechaHora(new Date(inicioMs))} → ${formatFechaHora(new Date(finMs))}`;
 }
