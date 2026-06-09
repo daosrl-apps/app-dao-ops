@@ -336,6 +336,7 @@ export function NuevaOrdenClient() {
       {splitInfo && (
         <NoEntraDialog
           cantidadTotal={Number(cantidad)}
+          tipo={tipo}
           inicioISO={inicioISO}
           info={splitInfo}
           onCancel={() => setSplitInfo(null)}
@@ -382,6 +383,7 @@ type Modo = "partir" | "extender" | "completar";
 
 function NoEntraDialog({
   cantidadTotal,
+  tipo,
   inicioISO,
   info,
   onCancel,
@@ -389,6 +391,7 @@ function NoEntraDialog({
   submitting,
 }: {
   cantidadTotal: number;
+  tipo: Tipo;
   inicioISO: string | null;
   info: SplitInfo;
   onCancel: () => void;
@@ -399,15 +402,19 @@ function NoEntraDialog({
   const durTotalSeg = info.fitSeg + info.restoSeg;
   const [modo, setModo] = React.useState<Modo>("partir");
 
-  // --- Opción 1: partir por cantidad -----------------------------------------
-  const [cantidadHoy, setCantidadHoy] = React.useState<string>(String(info.sugerenciaCantidadHoy));
-  const partirValido =
-    /^\d+$/.test(cantidadHoy) && Number(cantidadHoy) > 0 && Number(cantidadHoy) < cantidadTotal;
-  const restoPartir = partirValido ? cantidadTotal - Number(cantidadHoy) : null;
+  // Verbo según el tipo de OT (pintar / lavar) para las leyendas.
+  const verbCond = tipo === "PINTURA" ? "pintarían" : "lavarían"; // "se {verbCond}"
+  const verbInf = tipo === "PINTURA" ? "pintarse" : "lavarse"; //   "a {verbInf}"
+
+  // --- Opción 1: partir en el borde del turno (sin pedir cantidad) ------------
+  // Lo que entra hasta el cierre se hace hoy; el resto pasa al turno siguiente.
+  const partirHoy = info.sugerenciaCantidadHoy;
+  const partirResto = cantidadTotal - partirHoy;
+  const partirValido = partirHoy > 0 && partirResto > 0;
 
   // --- Opción 2: extender el turno N horas -----------------------------------
   const [horas, setHoras] = React.useState<string>("1");
-  const horasValido = /^\d+(\.\d+)?$/.test(horas) && Number(horas) > 0;
+  const horasValido = /^\d+$/.test(horas) && Number(horas) > 0;
   const horasNum = horasValido ? Number(horas) : 0;
   // Piezas que entran hoy con la extensión (duración es lineal en la cantidad).
   const tiempoHoySeg = info.fitSeg + horasNum * 3600;
@@ -425,7 +432,7 @@ function NoEntraDialog({
 
   const confirmar = () => {
     if (modo === "partir") {
-      onConfirm({ cantidadHoy: Number(cantidadHoy) });
+      onConfirm({ cantidadHoy: partirHoy });
     } else if (modo === "extender") {
       // Si con la extensión entra todo, es una sola OT completa (sin continuación).
       if (entraTodoConExtension) onConfirm({ forzarCompleto: true });
@@ -439,13 +446,7 @@ function NoEntraDialog({
     modo === "partir" ? partirValido : modo === "extender" ? extenderValido : true;
 
   const etiquetaConfirmar =
-    modo === "partir"
-      ? "Partir y crear las 2 OTs"
-      : modo === "extender"
-        ? entraTodoConExtension
-          ? "Extender turno y crear la OT"
-          : "Extender turno y crear las 2 OTs"
-        : "Extender hasta terminar y crear la OT";
+    modo === "partir" ? "Partir" : modo === "extender" ? "Extender" : "Extender hasta terminar";
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-6 z-50">
@@ -461,24 +462,16 @@ function NoEntraDialog({
             activo={modo === "partir"}
             onSelect={() => setModo("partir")}
             titulo="Partir la OT"
-            descripcion="Una parte hoy y el resto como OT de continuación mañana."
+            descripcion="Lo que no entra hasta el cierre pasa al comienzo del turno del día siguiente."
           >
-            <label className="flex flex-col gap-1">
-              <span className="text-sm font-medium text-slate-700">
-                Cantidad que se completa hoy (de {cantidadTotal})
-              </span>
-              <Input
-                inputMode="numeric"
-                pattern="\d*"
-                value={cantidadHoy}
-                onChange={(e) => setCantidadHoy(e.target.value.replace(/\D/g, ""))}
-                className="h-12 text-xl text-right font-medium"
-              />
-            </label>
-            {restoPartir !== null && (
-              <p className="mt-2 text-sm text-slate-600">
-                Hoy: <b>{cantidadHoy}</b> · Continuación ({formatFechaHora(new Date(info.proximoInicio))}):{" "}
-                <b>{restoPartir}</b>.
+            {partirValido ? (
+              <p className="text-sm text-slate-600">
+                Hoy: <b>{partirHoy}</b> · Continuación ({formatFechaHora(new Date(info.proximoInicio))}):{" "}
+                <b>{partirResto}</b>.
+              </p>
+            ) : (
+              <p className="text-sm text-amber-700">
+                No alcanza a completarse ni una pieza antes del cierre. Usá una de las otras opciones.
               </p>
             )}
           </OpcionCard>
@@ -490,27 +483,38 @@ function NoEntraDialog({
             titulo="Extender el turno"
             descripcion="Estirar el cierre unas horas; lo que no entre pasa al otro día."
           >
-            <label className="flex flex-col gap-1">
-              <span className="text-sm font-medium text-slate-700">Extender el turno (horas)</span>
-              <Input
-                inputMode="decimal"
-                value={horas}
-                onChange={(e) => setHoras(e.target.value.replace(/[^\d.]/g, ""))}
-                className="h-12 text-xl text-right font-medium"
-              />
-            </label>
+            <div className="flex items-center gap-3">
+              <label className="flex flex-col gap-1 shrink-0">
+                <span className="text-sm font-medium text-slate-700">Horas</span>
+                <Input
+                  inputMode="numeric"
+                  pattern="\d*"
+                  maxLength={2}
+                  value={horas}
+                  onChange={(e) => setHoras(e.target.value.replace(/\D/g, "").slice(0, 2))}
+                  className="h-12 w-16 text-xl text-center font-medium"
+                />
+              </label>
+              {horasValido && (
+                <p className="text-sm text-slate-600">
+                  El turno cierra a las <b>{formatHora(finExtendido)}</b>
+                  {entraTodoConExtension ? (
+                    <> y se {verbCond} <b>las {cantidadTotal}</b> piezas.</>
+                  ) : (
+                    <> y se {verbCond} <b>{cantidadHoyExt}</b> piezas.</>
+                  )}
+                </p>
+              )}
+            </div>
             {horasValido && (
-              <p className="mt-2 text-sm text-slate-600">
-                El turno cierra a las <b>{formatHora(finExtendido)}</b>.{" "}
-                {entraTodoConExtension ? (
-                  <>Entra <b>toda</b> la OT hoy (no pasa nada al otro día).</>
-                ) : (
-                  <>
-                    Hoy: <b>{cantidadHoyExt}</b> · Pasa al otro día (
-                    {formatFechaHora(new Date(info.proximoInicio))}): <b>{restoExt}</b>.
-                  </>
-                )}
-              </p>
+              entraTodoConExtension ? (
+                <p className="mt-2 text-sm text-slate-600">No queda nada para el turno siguiente.</p>
+              ) : (
+                <p className="mt-2 text-sm text-slate-600">
+                  Restan <b>{restoExt}</b> piezas a {verbInf} el turno siguiente (
+                  {formatFechaHora(new Date(info.proximoInicio))}).
+                </p>
+              )
             )}
           </OpcionCard>
 
@@ -519,7 +523,7 @@ function NoEntraDialog({
             activo={modo === "completar"}
             onSelect={() => setModo("completar")}
             titulo="Extender hasta terminar"
-            descripcion="La OT entera se hace hoy, corriendo más allá del cierre. Sin continuación."
+            descripcion="La OT se hace completa extendiendo el turno actual hasta terminar."
           >
             {finCompleto && (
               <p className="text-sm text-slate-600">
