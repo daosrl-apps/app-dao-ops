@@ -14,6 +14,7 @@ import {
   Clock,
   Monitor,
   GanttChartSquare,
+  History,
 } from "lucide-react";
 import { requireSession } from "@/lib/auth-guards";
 
@@ -82,6 +83,13 @@ const TARJETAS: Tarjeta[] = [
     titulo: "Métricas",
     desc: "Dashboard y comparativa contra el período anterior.",
     icon: LineChart,
+    roles: ["ADMIN"],
+  },
+  {
+    href: "/dashboard/auditoria",
+    titulo: "Auditoría",
+    desc: "Bitácora de eventos: altas, bajas, modificaciones y más.",
+    icon: History,
     roles: ["ADMIN"],
   },
 ];

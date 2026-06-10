@@ -22,6 +22,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireSessionApi } from "@/lib/auth-guards";
 import { obtenerConfiguracionPlanta, validarTurnos } from "@/lib/turnos";
+import { registrarAuditoria } from "@/lib/auditoria";
 
 const TurnoInput = z.object({
   orden: z.number().int().min(1).max(10),
@@ -72,6 +73,13 @@ export async function PUT(req: NextRequest) {
     for (const t of parsed.data.turnos) {
       await tx.turno.create({ data: t });
     }
+    await registrarAuditoria(tx, {
+      tipo: "EDITAR",
+      entidad: "Turno",
+      resumen: `Actualizó la configuración de turnos (${parsed.data.turnos.length})`,
+      detalle: { turnos: parsed.data.turnos },
+      usuario: { id: auth.claims.sub, name: auth.claims.name },
+    });
     return tx.turno.findMany({ orderBy: { orden: "asc" } });
   });
 

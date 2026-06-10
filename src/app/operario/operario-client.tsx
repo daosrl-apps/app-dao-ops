@@ -10,7 +10,7 @@
  */
 import * as React from "react";
 import Link from "next/link";
-import { Pause, Play, CheckCircle2, LogOut, Home, Droplets, Paintbrush } from "lucide-react";
+import { Pause, Play, CheckCircle2, LogOut, Home, Droplets, Paintbrush, Clock } from "lucide-react";
 import type { LineaSnapshot, LineaOrden } from "@/lib/linea";
 
 const POLL_MS = 2000;
@@ -21,6 +21,18 @@ export function OperarioClient({ userName, role }: { userName: string; role: str
   const [mostrandoPausa, setMostrandoPausa] = React.useState(false);
   const [motivoPausa, setMotivoPausa] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
+  // Finalizar: modal de cantidad completada + flujo de justificación de desvío.
+  const [finalizarOpen, setFinalizarOpen] = React.useState(false);
+  const [cantidadCompletada, setCantidadCompletada] = React.useState("");
+  const [justificacion, setJustificacion] = React.useState<
+    { deltaPct: number; cantidadFinal: number } | null
+  >(null);
+  const [justificacionTexto, setJustificacionTexto] = React.useState("");
+  // Editar minutos de la última pausa (solo supervisor / admin).
+  const [editarMinutosOpen, setEditarMinutosOpen] = React.useState(false);
+  const [minutosEdit, setMinutosEdit] = React.useState("");
+
+  const esSupervisor = role === "ADMIN" || role === "SUPERVISOR";
 
   const fetchSnapshot = React.useCallback(async () => {
     const res = await fetch("/api/linea/actual", { cache: "no-store" });
@@ -67,17 +79,74 @@ export function OperarioClient({ userName, role }: { userName: string; role: str
     setSubmitting(false);
   };
 
-  const finalizar = async () => {
-    if (!confirm("¿Finalizar la orden en curso?")) return;
+  const actual = snapshot?.ordenActual ?? null;
+  const enPausa = !!actual?.pausaActiva;
+  const enCurso = actual?.estado === "EN_CURSO";
+
+  const abrirFinalizar = () => {
+    setCantidadCompletada(String(actual?.cantidad ?? ""));
+    setFinalizarOpen(true);
+  };
+
+  // Envía finalizar; maneja el 409 de justificación abriendo el modal de texto.
+  const enviarFinalizar = async (cantidad: number, observaciones?: string) => {
     setSubmitting(true);
-    await fetch("/api/linea/finalizar", { method: "POST" });
+    const res = await fetch("/api/linea/finalizar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        cantidadCompletada: cantidad,
+        ...(observaciones ? { observaciones } : {}),
+      }),
+    });
+    if (res.status === 409) {
+      const data = await res.json().catch(() => null);
+      if (data?.needsJustificacion) {
+        setFinalizarOpen(false);
+        setJustificacion({ deltaPct: data.deltaPct, cantidadFinal: data.cantidadFinal });
+        setSubmitting(false);
+        return;
+      }
+    }
+    setFinalizarOpen(false);
+    setJustificacion(null);
+    setJustificacionTexto("");
+    setCantidadCompletada("");
     await fetchSnapshot();
     setSubmitting(false);
   };
 
-  const actual = snapshot?.ordenActual ?? null;
-  const enPausa = !!actual?.pausaActiva;
-  const enCurso = actual?.estado === "EN_CURSO";
+  const confirmarFinalizar = () => {
+    const c = parseInt(cantidadCompletada, 10);
+    if (!Number.isFinite(c) || c <= 0 || c > (actual?.cantidad ?? 0)) return;
+    enviarFinalizar(c);
+  };
+
+  const confirmarJustificacion = () => {
+    if (!justificacion || !justificacionTexto.trim()) return;
+    enviarFinalizar(justificacion.cantidadFinal, justificacionTexto.trim());
+  };
+
+  const abrirEditarMinutos = () => {
+    const dur = actual?.ultimaPausaCerrada?.durSeg ?? 0;
+    setMinutosEdit(String(Math.round(dur / 60)));
+    setEditarMinutosOpen(true);
+  };
+
+  const confirmarEditarMinutos = async () => {
+    if (!actual?.ultimaPausaCerrada) return;
+    const m = parseInt(minutosEdit, 10);
+    if (!Number.isFinite(m) || m < 0) return;
+    setSubmitting(true);
+    await fetch(`/api/pausas/${actual.ultimaPausaCerrada.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ minutos: m }),
+    });
+    setEditarMinutosOpen(false);
+    await fetchSnapshot();
+    setSubmitting(false);
+  };
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-900 text-white">
@@ -123,31 +192,43 @@ export function OperarioClient({ userName, role }: { userName: string; role: str
         )}
 
         {enCurso && (
-          <div className="flex flex-wrap gap-4 w-full max-w-2xl justify-center">
-            {enPausa ? (
+          <div className="flex flex-col gap-3 w-full max-w-2xl items-center">
+            <div className="flex flex-wrap gap-4 w-full justify-center">
+              {enPausa ? (
+                <button
+                  onClick={reanudar}
+                  disabled={submitting}
+                  className="h-24 flex-1 min-w-[200px] rounded-2xl bg-amber-500 hover:bg-amber-600 text-2xl font-bold text-slate-900 flex items-center justify-center gap-3 shadow-lg active:scale-95 transition"
+                >
+                  <Play className="h-8 w-8" /> Reanudar
+                </button>
+              ) : (
+                <button
+                  onClick={() => setMostrandoPausa(true)}
+                  disabled={submitting}
+                  className="h-24 flex-1 min-w-[200px] rounded-2xl bg-slate-200 hover:bg-slate-300 text-2xl font-bold text-slate-900 flex items-center justify-center gap-3 shadow-lg active:scale-95 transition"
+                >
+                  <Pause className="h-8 w-8" /> Pausar
+                </button>
+              )}
               <button
-                onClick={reanudar}
+                onClick={abrirFinalizar}
                 disabled={submitting}
-                className="h-24 flex-1 min-w-[200px] rounded-2xl bg-amber-500 hover:bg-amber-600 text-2xl font-bold text-slate-900 flex items-center justify-center gap-3 shadow-lg active:scale-95 transition"
+                className="h-24 flex-1 min-w-[200px] rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-2xl font-bold text-white flex items-center justify-center gap-3 shadow-lg active:scale-95 transition"
               >
-                <Play className="h-8 w-8" /> Reanudar
+                <CheckCircle2 className="h-8 w-8" /> Finalizar
               </button>
-            ) : (
+            </div>
+            {/* Supervisor/admin: corregir los minutos de la última pausa cerrada. */}
+            {esSupervisor && !enPausa && actual?.ultimaPausaCerrada && (
               <button
-                onClick={() => setMostrandoPausa(true)}
+                onClick={abrirEditarMinutos}
                 disabled={submitting}
-                className="h-24 flex-1 min-w-[200px] rounded-2xl bg-slate-200 hover:bg-slate-300 text-2xl font-bold text-slate-900 flex items-center justify-center gap-3 shadow-lg active:scale-95 transition"
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-600 px-5 h-12 text-base font-medium text-slate-200 hover:bg-slate-800"
               >
-                <Pause className="h-8 w-8" /> Pausar
+                <Clock className="h-5 w-5" /> Editar minutos de pausa
               </button>
             )}
-            <button
-              onClick={finalizar}
-              disabled={submitting}
-              className="h-24 flex-1 min-w-[200px] rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-2xl font-bold text-white flex items-center justify-center gap-3 shadow-lg active:scale-95 transition"
-            >
-              <CheckCircle2 className="h-8 w-8" /> Finalizar
-            </button>
           </div>
         )}
       </main>
@@ -161,6 +242,41 @@ export function OperarioClient({ userName, role }: { userName: string; role: str
             setMotivoPausa("");
           }}
           onConfirm={pausarConfirmar}
+          submitting={submitting}
+        />
+      )}
+
+      {finalizarOpen && actual && (
+        <FinalizarDialog
+          cantidadTotal={actual.cantidad}
+          cantidad={cantidadCompletada}
+          onCantidad={setCantidadCompletada}
+          onCancel={() => setFinalizarOpen(false)}
+          onConfirm={confirmarFinalizar}
+          submitting={submitting}
+        />
+      )}
+
+      {justificacion && (
+        <JustificacionDialog
+          deltaPct={justificacion.deltaPct}
+          texto={justificacionTexto}
+          onTexto={setJustificacionTexto}
+          onCancel={() => {
+            setJustificacion(null);
+            setJustificacionTexto("");
+          }}
+          onConfirm={confirmarJustificacion}
+          submitting={submitting}
+        />
+      )}
+
+      {editarMinutosOpen && (
+        <EditarMinutosDialog
+          minutos={minutosEdit}
+          onMinutos={setMinutosEdit}
+          onCancel={() => setEditarMinutosOpen(false)}
+          onConfirm={confirmarEditarMinutos}
           submitting={submitting}
         />
       )}
@@ -372,6 +488,175 @@ function PausaDialog({
             className="h-14 px-6 rounded-xl bg-[#1627b1] text-white text-lg font-medium disabled:opacity-50"
           >
             {submitting ? "Pausando…" : "Confirmar pausa"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FinalizarDialog({
+  cantidadTotal,
+  cantidad,
+  onCantidad,
+  onCancel,
+  onConfirm,
+  submitting,
+}: {
+  cantidadTotal: number;
+  cantidad: string;
+  onCantidad: (v: string) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+  submitting: boolean;
+}) {
+  const c = parseInt(cantidad, 10);
+  const valido = Number.isFinite(c) && c > 0 && c <= cantidadTotal;
+  const esParcial = valido && c < cantidadTotal;
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-6 z-50">
+      <div className="bg-white text-slate-900 rounded-2xl w-full max-w-lg p-6 shadow-2xl">
+        <h2 className="text-2xl font-bold mb-3">Finalizar orden</h2>
+        <p className="text-slate-600 mb-4">
+          ¿Se completó la totalidad? Si terminás con menos piezas, el remanente se
+          agenda como una nueva OT al final de la cola.
+        </p>
+        <label className="block text-sm font-medium text-slate-700 mb-1">
+          Piezas completadas (de {cantidadTotal})
+        </label>
+        <input
+          type="number"
+          min={1}
+          max={cantidadTotal}
+          autoFocus
+          value={cantidad}
+          onChange={(e) => onCantidad(e.target.value)}
+          className="w-full rounded-xl border border-slate-300 p-4 text-lg tabular-nums focus:outline-none focus:ring-2 focus:ring-[#1627b1]"
+        />
+        {esParcial && (
+          <p className="mt-2 text-sm text-amber-700">
+            Quedan {cantidadTotal - c} piezas → se crea una OT continuación.
+          </p>
+        )}
+        <div className="mt-5 flex justify-end gap-3">
+          <button
+            onClick={onCancel}
+            className="h-14 px-6 rounded-xl border border-slate-300 text-lg font-medium hover:bg-slate-100"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={!valido || submitting}
+            className="h-14 px-6 rounded-xl bg-emerald-600 text-white text-lg font-medium disabled:opacity-50"
+          >
+            {submitting ? "Finalizando…" : esParcial ? "Finalizar y splitear" : "Finalizar"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function JustificacionDialog({
+  deltaPct,
+  texto,
+  onTexto,
+  onCancel,
+  onConfirm,
+  submitting,
+}: {
+  deltaPct: number;
+  texto: string;
+  onTexto: (v: string) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+  submitting: boolean;
+}) {
+  const tarde = deltaPct > 0;
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-6 z-50">
+      <div className="bg-white text-slate-900 rounded-2xl w-full max-w-lg p-6 shadow-2xl">
+        <h2 className="text-2xl font-bold mb-2">Justificá el desvío</h2>
+        <p className="text-slate-600 mb-4">
+          El tiempo real se desvió{" "}
+          <b className={tarde ? "text-red-600" : "text-emerald-600"}>
+            {tarde ? "+" : ""}
+            {deltaPct}%
+          </b>{" "}
+          respecto del estimado. Indicá el motivo (queda en las observaciones de la OT).
+        </p>
+        <textarea
+          autoFocus
+          value={texto}
+          onChange={(e) => onTexto(e.target.value)}
+          className="w-full min-h-[120px] rounded-xl border border-slate-300 p-4 text-lg focus:outline-none focus:ring-2 focus:ring-[#1627b1]"
+          placeholder="Ej: demora por falta de piezas, secado más lento, etc."
+        />
+        <div className="mt-5 flex justify-end gap-3">
+          <button
+            onClick={onCancel}
+            className="h-14 px-6 rounded-xl border border-slate-300 text-lg font-medium hover:bg-slate-100"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={!texto.trim() || submitting}
+            className="h-14 px-6 rounded-xl bg-emerald-600 text-white text-lg font-medium disabled:opacity-50"
+          >
+            {submitting ? "Finalizando…" : "Guardar y finalizar"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EditarMinutosDialog({
+  minutos,
+  onMinutos,
+  onCancel,
+  onConfirm,
+  submitting,
+}: {
+  minutos: string;
+  onMinutos: (v: string) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+  submitting: boolean;
+}) {
+  const m = parseInt(minutos, 10);
+  const valido = Number.isFinite(m) && m >= 0;
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-6 z-50">
+      <div className="bg-white text-slate-900 rounded-2xl w-full max-w-md p-6 shadow-2xl">
+        <h2 className="text-2xl font-bold mb-3">Editar minutos de pausa</h2>
+        <p className="text-slate-600 mb-4">
+          Corregí la duración registrada de la última pausa.
+        </p>
+        <label className="block text-sm font-medium text-slate-700 mb-1">Minutos</label>
+        <input
+          type="number"
+          min={0}
+          autoFocus
+          value={minutos}
+          onChange={(e) => onMinutos(e.target.value)}
+          className="w-full rounded-xl border border-slate-300 p-4 text-lg tabular-nums focus:outline-none focus:ring-2 focus:ring-[#1627b1]"
+        />
+        <div className="mt-5 flex justify-end gap-3">
+          <button
+            onClick={onCancel}
+            className="h-14 px-6 rounded-xl border border-slate-300 text-lg font-medium hover:bg-slate-100"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={!valido || submitting}
+            className="h-14 px-6 rounded-xl bg-[#1627b1] text-white text-lg font-medium disabled:opacity-50"
+          >
+            {submitting ? "Guardando…" : "Guardar"}
           </button>
         </div>
       </div>

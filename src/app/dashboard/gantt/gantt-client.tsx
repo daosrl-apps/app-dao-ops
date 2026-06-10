@@ -18,6 +18,8 @@ export interface GanttOT {
   /** Real: se llenan al iniciar/finalizar la OT. null si todavía no pasó. */
   inicioReal: string | null;
   finReal: string | null;
+  /** Pausas cerradas (segmentos grises sobre la barra real). */
+  pausas: { inicio: string; fin: string }[];
 }
 
 const ROW_H = 52;
@@ -52,8 +54,8 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
   const [now, setNow] = React.useState<number | null>(null);
   React.useEffect(() => {
     setNow(Date.now());
-    const hayEnCurso = items.some((o) => o.estado === "EN_CURSO" && o.inicioReal && !o.finReal);
-    if (!hayEnCurso) return;
+    // Tickea cada minuto para mantener la línea de "ahora" (y las barras en
+    // curso) actualizadas.
     const id = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(id);
   }, [items]);
@@ -156,6 +158,13 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
     d0 = next;
   }
 
+  // Límites de día (medianoche) dentro del rango → línea roja vertical de cambio
+  // de día. Son los comienzos de cada segmento de día salvo el primero.
+  const limites = dias.slice(1).map((s) => s.x);
+  // Línea vertical de "ahora" (hora actual), si cae dentro del rango visible.
+  const nowX =
+    now != null && now >= min.getTime() && now <= max.getTime() ? xDe(now) : null;
+
   return (
     <>
       {toolbar}
@@ -184,6 +193,19 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
                     </span>
                   </div>
                 ))}
+                {limites.map((x, li) => (
+                  <div
+                    key={"limh" + li}
+                    className="absolute top-0 h-full border-l-2 border-red-500/60"
+                    style={{ left: x }}
+                  />
+                ))}
+                {nowX != null && (
+                  <div
+                    className="absolute top-0 h-full border-l-2 border-[#1627b1]"
+                    style={{ left: nowX }}
+                  />
+                )}
               </div>
             </div>
             {/* Fila de hora */}
@@ -206,6 +228,23 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
                     )}
                   </div>
                 ))}
+                {limites.map((x, li) => (
+                  <div
+                    key={"limhh" + li}
+                    className="absolute top-0 h-full border-l-2 border-red-500/60"
+                    style={{ left: x }}
+                  />
+                ))}
+                {nowX != null && (
+                  <div
+                    className="absolute top-0 h-full border-l-2 border-[#1627b1]"
+                    style={{ left: nowX }}
+                  >
+                    <span className="absolute -top-0.5 left-1 rounded bg-[#1627b1] px-1 text-[10px] font-bold text-white whitespace-nowrap">
+                      ahora {now != null ? formatHHMM(now) : ""}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -245,6 +284,23 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
                     />
                   ))}
 
+                  {/* Cambio de día: línea roja vertical en cada medianoche */}
+                  {limites.map((x, li) => (
+                    <div
+                      key={"lim" + li}
+                      className="absolute top-0 h-full border-l-2 border-red-500/60"
+                      style={{ left: x }}
+                    />
+                  ))}
+
+                  {/* Hora actual: línea vertical */}
+                  {nowX != null && (
+                    <div
+                      className="absolute top-0 h-full border-l-2 border-[#1627b1]"
+                      style={{ left: nowX }}
+                    />
+                  )}
+
                   {/* Proyectado: barra sólida */}
                   {verProyectado && (
                     <button
@@ -273,6 +329,27 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
                       aria-label={`OT ${o.numero} real`}
                     />
                   )}
+
+                  {/* Pausas: segmentos grises sólidos sobre la barra real */}
+                  {verReal &&
+                    rs &&
+                    o.pausas.map((p, pi) => {
+                      const ini = Math.max(rs.start, new Date(p.inicio).getTime());
+                      const fin = Math.min(rs.end, new Date(p.fin).getTime());
+                      if (fin <= ini) return null;
+                      return (
+                        <div
+                          key={pi}
+                          className="absolute top-1/2 -translate-y-1/2 z-30 rounded-sm bg-slate-500"
+                          style={{
+                            left: xDe(ini),
+                            width: Math.max(2, xDe(fin) - xDe(ini)),
+                            height: 26,
+                          }}
+                          title={`Pausado: ${rangoMs(new Date(p.inicio).getTime(), new Date(p.fin).getTime())}`}
+                        />
+                      );
+                    })}
                 </div>
               </div>
             );
@@ -281,16 +358,25 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-4 text-sm text-slate-600">
-        <Leyenda className="bg-sky-500" label="Lavado" />
-        <Leyenda className="bg-emerald-500" label="Pintura" />
+        <Leyenda className="bg-sky-500" label="Proyectado: Lavado" />
+        <Leyenda className="bg-emerald-500" label="Proyectado: Pintura" />
         <span className="text-slate-300">|</span>
-        <span className="inline-flex items-center gap-2">
-          <span className="inline-block h-3 w-5 rounded-sm bg-emerald-500" />
-          Proyectado (sólido)
-        </span>
         <span className="inline-flex items-center gap-2">
           <span className="inline-block h-3 w-5 rounded-sm border-2 border-dotted border-slate-700" />
           Real (línea de puntos)
+        </span>
+        <span className="inline-flex items-center gap-2">
+          <span className="inline-block h-3 w-5 rounded-sm bg-slate-500" />
+          Pausado
+        </span>
+        <span className="text-slate-300">|</span>
+        <span className="inline-flex items-center gap-2">
+          <span className="inline-block h-4 w-0.5 bg-[#1627b1]" />
+          Ahora
+        </span>
+        <span className="inline-flex items-center gap-2">
+          <span className="inline-block h-4 w-0.5 bg-red-500" />
+          Cambio de día
         </span>
       </div>
     </>
@@ -353,6 +439,10 @@ function fechaLarga(d: Date): string {
 }
 function pad(n: number) {
   return n.toString().padStart(2, "0");
+}
+function formatHHMM(ms: number): string {
+  const d = new Date(ms);
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 function rango(inicioISO: string, finISO: string): string {
   return `${formatFechaHora(inicioISO)} → ${formatFechaHora(finISO)}`;

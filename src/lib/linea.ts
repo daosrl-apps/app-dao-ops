@@ -9,6 +9,7 @@
  * PENDIENTE en cola por `inicioProgramado`.
  */
 import { prisma } from "@/lib/db";
+import { obtenerTurnos, turnoQueContiene } from "@/lib/turnos";
 
 export interface LineaOrden {
   id: string;
@@ -30,14 +31,19 @@ export interface LineaOrden {
   cliente: { nombre: string };
   /// Pausa actualmente abierta (sin `fin`), si hay.
   pausaActiva: { id: string; inicio: string } | null;
-  /// Suma en ms de las pausas finalizadas.
+  /// Suma en ms de las pausas finalizadas (usa el override de duración si existe).
   pausasFinalizadasMs: number;
+  /// Última pausa cerrada (para el botón "editar minutos" al reanudar).
+  ultimaPausaCerrada: { id: string; durSeg: number } | null;
 }
 
 export interface LineaSnapshot {
   /// ISO del server al momento del request — el cliente lo usa para ajustar
   /// drift de reloj al calcular el timer.
   serverNow: string;
+  /// true si en este momento la fábrica está cerrada (no hay ninguna ventana de
+  /// jornada vigente). La TV muestra "Fábrica cerrada" en vez de una OT futura.
+  fabricaCerrada: boolean;
   ordenActual: LineaOrden | null;
   ordenAnterior: LineaOrden | null;
   /// Próximas OTs en cola. Por convención el primero es la "siguiente
@@ -45,16 +51,25 @@ export interface LineaSnapshot {
   ordenesSiguientes: LineaOrden[];
 }
 
+type PausaRow = { id: string; inicio: Date; fin: Date | null; duracionOverrideSeg: number | null };
+
 type OrdenRow = NonNullable<Awaited<ReturnType<typeof prisma.ordenTrabajo.findFirst>>> & {
   articulo: { codigo: string; descripcion: string | null; cliente: { nombre: string } };
-  pausas: { id: string; inicio: Date; fin: Date | null }[];
+  pausas: PausaRow[];
 };
+
+/** Duración en ms de una pausa cerrada: usa el override manual si está seteado. */
+function duracionPausaMs(p: PausaRow): number {
+  if (p.duracionOverrideSeg != null) return p.duracionOverrideSeg * 1000;
+  if (p.fin === null) return 0;
+  return p.fin.getTime() - p.inicio.getTime();
+}
 
 function shapeOrden(it: OrdenRow): LineaOrden {
   const pausaActiva = it.pausas.find((p) => p.fin === null) ?? null;
-  const pausasFinalizadasMs = it.pausas
-    .filter((p) => p.fin !== null)
-    .reduce((acc, p) => acc + (p.fin!.getTime() - p.inicio.getTime()), 0);
+  const cerradas = it.pausas.filter((p) => p.fin !== null);
+  const pausasFinalizadasMs = cerradas.reduce((acc, p) => acc + duracionPausaMs(p), 0);
+  const ultima = cerradas.length > 0 ? cerradas[cerradas.length - 1] : null;
   return {
     id: it.id,
     numero: it.numero,
@@ -74,6 +89,9 @@ function shapeOrden(it: OrdenRow): LineaOrden {
     cliente: { nombre: it.articulo.cliente.nombre },
     pausaActiva: pausaActiva ? { id: pausaActiva.id, inicio: pausaActiva.inicio.toISOString() } : null,
     pausasFinalizadasMs,
+    ultimaPausaCerrada: ultima
+      ? { id: ultima.id, durSeg: Math.round(duracionPausaMs(ultima) / 1000) }
+      : null,
   };
 }
 
@@ -83,6 +101,13 @@ const includeFull = {
 };
 
 export async function resolverLineaSnapshot(): Promise<LineaSnapshot> {
+  // Ventana de jornada vigente: si `now` no cae en ninguna, la fábrica está
+  // cerrada y no debemos mostrar una OT futura como "actual" (bug TV #10).
+  const ahora = new Date();
+  const turnos = await obtenerTurnos();
+  const ventanaActual = turnoQueContiene(turnos, ahora);
+  const fabricaCerrada = ventanaActual === null;
+
   // Buscamos la OT EN_CURSO; si no hay, la PENDIENTE más próxima.
   let actualRaw = await prisma.ordenTrabajo.findFirst({
     where: { estado: "EN_CURSO" },
@@ -91,11 +116,22 @@ export async function resolverLineaSnapshot(): Promise<LineaSnapshot> {
   });
 
   if (!actualRaw) {
-    actualRaw = await prisma.ordenTrabajo.findFirst({
+    const proxima = await prisma.ordenTrabajo.findFirst({
       where: { estado: "PENDIENTE" },
       orderBy: { inicioProgramado: "asc" },
       include: includeFull,
     });
+    // Solo la promovemos a "actual" si la fábrica está abierta y la OT pertenece
+    // a la ventana de jornada vigente (su inicio cae antes del cierre actual).
+    // Si arranca en una ventana futura (p. ej. mañana) o la fábrica está cerrada,
+    // dejamos `ordenActual = null` (rectángulo vacío) y la mostramos como próxima.
+    if (
+      proxima &&
+      ventanaActual !== null &&
+      proxima.inicioProgramado.getTime() < ventanaActual.fin.getTime()
+    ) {
+      actualRaw = proxima;
+    }
   }
 
   const ordenActual = actualRaw ? shapeOrden(actualRaw) : null;
@@ -135,7 +171,8 @@ export async function resolverLineaSnapshot(): Promise<LineaSnapshot> {
   }
 
   return {
-    serverNow: new Date().toISOString(),
+    serverNow: ahora.toISOString(),
+    fabricaCerrada,
     ordenActual,
     ordenAnterior,
     ordenesSiguientes,

@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireSessionApi } from "@/lib/auth-guards";
+import { registrarAuditoria } from "@/lib/auditoria";
 
 const Body = z.object({ motivo: z.string().trim().min(1).max(500) });
 
@@ -30,8 +31,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Ya hay una pausa abierta" }, { status: 400 });
   }
 
-  await prisma.pausa.create({
-    data: { ordenId: orden.id, motivo: parsed.data.motivo },
+  const pausa = await prisma.pausa.create({
+    data: { ordenId: orden.id, motivo: parsed.data.motivo, usuarioId: auth.claims.sub },
   });
+
+  await registrarAuditoria(prisma, {
+    tipo: "PAUSAR",
+    entidad: "Pausa",
+    entidadId: pausa.id,
+    resumen: `Pausó la OT #${orden.numero}: ${parsed.data.motivo}`,
+    detalle: { ordenId: orden.id, ordenNumero: orden.numero, motivo: parsed.data.motivo },
+    usuario: { id: auth.claims.sub, name: auth.claims.name },
+  });
+
   return NextResponse.json({ ok: true });
 }

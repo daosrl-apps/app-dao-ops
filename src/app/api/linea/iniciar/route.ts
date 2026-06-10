@@ -9,6 +9,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireSessionApi } from "@/lib/auth-guards";
+import { registrarAuditoria } from "@/lib/auditoria";
 
 export async function POST() {
   const auth = await requireSessionApi();
@@ -30,6 +31,15 @@ export async function POST() {
   await prisma.ordenTrabajo.update({
     where: { id: pendiente.id },
     data: { estado: "EN_CURSO", inicioReal: new Date() },
+  });
+
+  await registrarAuditoria(prisma, {
+    tipo: "INICIAR",
+    entidad: "OT",
+    entidadId: pendiente.id,
+    resumen: `Inició la OT #${pendiente.numero}`,
+    detalle: { ordenNumero: pendiente.numero },
+    usuario: { id: auth.claims.sub, name: auth.claims.name },
   });
 
   return NextResponse.json({ ok: true, ordenId: pendiente.id });

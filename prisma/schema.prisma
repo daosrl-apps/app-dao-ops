@@ -43,6 +43,8 @@ model User {
   sessions       Session[]
   ordenesCreadas OrdenTrabajo[]   @relation("OrdenCreador")
   importaciones  ImportacionCsv[]
+  pausas         Pausa[]
+  auditorias     Auditoria[]
 
   @@index([isActive])
 }
@@ -169,6 +171,10 @@ model OrdenTrabajo {
   /// trazabilidad si después se edita el maestro).
   configPerchas      String?
   estado             OrdenEstado @default(PENDIENTE)
+  /// Observaciones / justificación. Se completa, p. ej., cuando al finalizar la
+  /// OT el tiempo real se desvía más de ±20% del teórico (justificación
+  /// obligatoria) o con notas manuales del supervisor.
+  observaciones      String?
   /// Horario de inicio elegido por el supervisor al cargar la OT.
   inicioProgramado   DateTime
   /// Plan teórico (puede recalcularse en cualquier finalización).
@@ -208,11 +214,20 @@ model Pausa {
   motivo    String
   inicio    DateTime  @default(now())
   fin       DateTime?
+  /// Usuario que registró la pausa (operario/supervisor). Nullable por filas
+  /// previas a esta columna.
+  usuarioId String?
+  /// Override manual de la duración (en segundos) cuando un supervisor/admin
+  /// edita los minutos al reanudar. Si está seteado, prevalece sobre
+  /// `fin - inicio` para el cómputo de tiempo pausado. Preserva el real en `fin`.
+  duracionOverrideSeg Int?
   createdAt DateTime  @default(now())
 
-  orden OrdenTrabajo @relation(fields: [ordenId], references: [id], onDelete: Cascade)
+  orden   OrdenTrabajo @relation(fields: [ordenId], references: [id], onDelete: Cascade)
+  usuario User?        @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
 
   @@index([ordenId])
+  @@index([usuarioId])
 }
 
 // =============================================================================
@@ -281,4 +296,34 @@ model ImportacionCsv {
   usuario User @relation(fields: [usuarioId], references: [id])
 
   @@index([createdAt])
+}
+
+// =============================================================================
+// Auditoría: bitácora de eventos del sistema
+// =============================================================================
+
+/// Registro append-only de eventos del dominio: altas, bajas, modificaciones,
+/// inicios/finalizaciones de OT, pausas, imports, cambios de turnos y logins.
+/// `tipo` (CREAR, EDITAR, ELIMINAR, …) se muestra como píldora de color en la UI.
+model Auditoria {
+  id            String   @id @default(cuid())
+  /// Tipo de evento: CREAR|EDITAR|ELIMINAR|INICIAR|FINALIZAR|PAUSAR|REANUDAR|REORDENAR|SPLIT|IMPORTAR|LOGIN
+  tipo          String
+  /// Entidad afectada: OT|Pausa|Usuario|Articulo|Turno|Auth
+  entidad       String
+  entidadId     String?
+  /// Texto legible para humanos del evento.
+  resumen       String
+  /// Datos adicionales (valores previos/nuevos, contadores, etc.).
+  detalle       Json?
+  usuarioId     String?
+  /// Snapshot del nombre del usuario (para no perderlo si se borra el User).
+  usuarioNombre String?
+  createdAt     DateTime @default(now())
+
+  usuario User? @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([tipo])
+  @@index([entidad])
 }

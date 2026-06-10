@@ -12,8 +12,13 @@ import {
   duracionItem,
   planificar,
   proponerOrdenOptimo,
+  reencadenar,
+  desvioRelativo,
+  requiereJustificacion,
+  UMBRAL_DESVIO,
   type ItemParaCambio,
   type ItemPlan,
+  type ItemReencadenable,
 } from "@/lib/schedule";
 
 describe("constantes", () => {
@@ -69,6 +74,54 @@ describe("tiempoCambioSeg", () => {
   it("si alguno es LAVADO no hay cambio de color (solo base)", () => {
     expect(tiempoCambioSeg(lavado(), pintura("Azul"))).toBe(GAP_BASE_SEG);
     expect(tiempoCambioSeg(pintura("Azul"), lavado())).toBe(GAP_BASE_SEG);
+  });
+});
+
+describe("reencadenar", () => {
+  const t0 = new Date("2026-06-10T06:00:00.000Z");
+  const HORA = 3600;
+
+  it("ancla la primera OT en anclaInicio y encadena con gap base", () => {
+    const items: ItemReencadenable[] = [
+      { tipo: "PINTURA", color: "Rojo", duracionSeg: HORA },
+      { tipo: "PINTURA", color: "Rojo", duracionSeg: HORA },
+    ];
+    const r = reencadenar(items, t0);
+    expect(r[0].inicio.getTime()).toBe(t0.getTime());
+    expect(r[0].fin.getTime()).toBe(t0.getTime() + HORA * 1000);
+    // segunda arranca tras 15 min de gap (mismo color).
+    expect(r[1].inicio.getTime()).toBe(r[0].fin.getTime() + GAP_BASE_SEG * 1000);
+    expect(r[1].fin.getTime()).toBe(r[1].inicio.getTime() + HORA * 1000);
+  });
+
+  it("suma 30 min extra cuando cambia de color en PINTURA→PINTURA", () => {
+    const items: ItemReencadenable[] = [
+      { tipo: "PINTURA", color: "Rojo", duracionSeg: HORA },
+      { tipo: "PINTURA", color: "Azul", duracionSeg: HORA },
+    ];
+    const r = reencadenar(items, t0);
+    expect(r[1].inicio.getTime()).toBe(
+      r[0].fin.getTime() + (GAP_BASE_SEG + CAMBIO_COLOR_SEG) * 1000,
+    );
+  });
+
+  it("lista vacía devuelve []", () => {
+    expect(reencadenar([], t0)).toEqual([]);
+  });
+});
+
+describe("desvío de tiempo", () => {
+  it("desvioRelativo = (real - teo) / teo", () => {
+    expect(desvioRelativo(120, 100)).toBeCloseTo(0.2);
+    expect(desvioRelativo(80, 100)).toBeCloseTo(-0.2);
+    expect(desvioRelativo(100, 0)).toBe(0);
+  });
+  it("requiereJustificacion solo si supera el umbral (estricto)", () => {
+    expect(UMBRAL_DESVIO).toBe(0.2);
+    expect(requiereJustificacion(120, 100)).toBe(false); // exactamente 20% no excede
+    expect(requiereJustificacion(121, 100)).toBe(true); // 21%
+    expect(requiereJustificacion(79, 100)).toBe(true); // -21%
+    expect(requiereJustificacion(100, 100)).toBe(false);
   });
 });
 

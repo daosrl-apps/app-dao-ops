@@ -11,7 +11,10 @@ export default async function GanttPage() {
     take: 200,
     where: { estado: { not: "CANCELADO" } },
     orderBy: { inicioTeorico: "asc" },
-    include: { articulo: { select: { codigo: true, descripcion: true } } },
+    include: {
+      articulo: { select: { codigo: true, descripcion: true } },
+      pausas: { where: { fin: { not: null } }, select: { inicio: true, fin: true } },
+    },
   });
 
   const items: GanttOT[] = ordenes.map((o) => ({
@@ -27,6 +30,8 @@ export default async function GanttPage() {
     // Real: se llenan cuando el operario inicia/finaliza la OT.
     inicioReal: o.inicioReal?.toISOString() ?? null,
     finReal: o.finReal?.toISOString() ?? null,
+    // Pausas cerradas (segmentos grises sobre la barra real).
+    pausas: o.pausas.map((p) => ({ inicio: p.inicio.toISOString(), fin: p.fin!.toISOString() })),
   }));
 
   return (

@@ -11,6 +11,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireSessionApi } from "@/lib/auth-guards";
+import { registrarAuditoria } from "@/lib/auditoria";
 
 export async function DELETE(
   _req: Request,
@@ -24,6 +25,7 @@ export async function DELETE(
     where: { id },
     select: {
       id: true,
+      numero: true,
       estado: true,
       inicioProgramado: true,
       inicioTeorico: true,
@@ -67,6 +69,15 @@ export async function DELETE(
         },
       });
     }
+  });
+
+  await registrarAuditoria(prisma, {
+    tipo: "ELIMINAR",
+    entidad: "OT",
+    entidadId: id,
+    resumen: `Borró la OT #${orden.numero}`,
+    detalle: { ordenNumero: orden.numero },
+    usuario: { id: auth.claims.sub, name: auth.claims.name },
   });
 
   return NextResponse.json({ ok: true });

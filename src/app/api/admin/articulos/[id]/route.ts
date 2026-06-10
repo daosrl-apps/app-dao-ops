@@ -10,6 +10,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireSessionApi } from "@/lib/auth-guards";
 import { CATALOGO_COLORES, SIN_COLOR } from "@/lib/color-parser";
+import { registrarAuditoria } from "@/lib/auditoria";
 
 const VALID_COLORS = new Set<string>([...CATALOGO_COLORES, SIN_COLOR]);
 
@@ -49,5 +50,15 @@ export async function PATCH(
   if (parsed.data.configPerchas !== undefined) data.configPerchas = parsed.data.configPerchas;
 
   const articulo = await prisma.articulo.update({ where: { id }, data });
+
+  await registrarAuditoria(prisma, {
+    tipo: "EDITAR",
+    entidad: "Articulo",
+    entidadId: articulo.id,
+    resumen: `Editó el artículo ${articulo.codigo}`,
+    detalle: { campos: Object.keys(data) },
+    usuario: { id: auth.claims.sub, name: auth.claims.name },
+  });
+
   return NextResponse.json({ articulo });
 }

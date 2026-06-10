@@ -4,6 +4,7 @@ import { Droplets, Paintbrush } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/auth-guards";
 import { formatFechaHora } from "@/lib/utils";
+import { PausasListClient, type PausaItem } from "./pausas-list-client";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,7 @@ export default async function OrdenDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireSession();
+  const claims = await requireSession();
   const { id } = await params;
 
   const ot = await prisma.ordenTrabajo.findUnique({
@@ -20,12 +21,33 @@ export default async function OrdenDetailPage({
     include: {
       articulo: { include: { cliente: true } },
       creadoPor: { select: { name: true } },
-      pausas: { orderBy: { inicio: "asc" } },
+      pausas: { orderBy: { inicio: "asc" }, include: { usuario: { select: { name: true } } } },
       ordenPadre: { select: { id: true, numero: true } },
       continuaciones: { select: { id: true, numero: true, cantidad: true } },
     },
   });
   if (!ot) notFound();
+
+  // Duración (ms) de una pausa: usa el override manual si está seteado.
+  const durPausaMs = (p: (typeof ot.pausas)[number]): number | null => {
+    if (p.duracionOverrideSeg != null) return p.duracionOverrideSeg * 1000;
+    if (!p.fin) return null;
+    return p.fin.getTime() - p.inicio.getTime();
+  };
+  const tiempoPausadoMs = ot.pausas.reduce((acc, p) => acc + (durPausaMs(p) ?? 0), 0);
+
+  const pausasView: PausaItem[] = ot.pausas.map((p) => {
+    const ms = durPausaMs(p);
+    return {
+      id: p.id,
+      motivo: p.motivo,
+      inicio: p.inicio.toISOString(),
+      fin: p.fin?.toISOString() ?? null,
+      usuario: p.usuario?.name ?? null,
+      durMin: ms != null ? Math.round(ms / 60000) : null,
+    };
+  });
+  const puedeEliminarPausa = claims.role === "ADMIN" || claims.role === "SUPERVISOR";
 
   const titulo = ot.articulo.descripcion?.trim() || ot.articulo.codigo;
   const isLavado = ot.tipo === "LAVADO";
@@ -70,6 +92,14 @@ export default async function OrdenDetailPage({
         <div className="space-y-4">
           <TiempoFila label="Inicio" teorico={ot.inicioTeorico} real={ot.inicioReal} />
           <TiempoFila label="Fin" teorico={ot.finTeorico} real={ot.finReal} />
+          {tiempoPausadoMs > 0 && (
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-base text-slate-500">Tiempo pausado</span>
+              <span className="text-lg font-bold tabular-nums text-amber-600">
+                {formatDelta(Math.round(tiempoPausadoMs / 60000))}
+              </span>
+            </div>
+          )}
           <div className="flex items-baseline justify-between gap-3 border-t border-slate-100 pt-3">
             <span className="text-base text-slate-500">Inicio programado</span>
             <span className="text-lg font-semibold tabular-nums">{formatDT(ot.inicioProgramado)}</span>
@@ -111,19 +141,19 @@ export default async function OrdenDetailPage({
         </div>
       )}
 
+      {ot.observaciones && (
+        <div className="rounded-2xl bg-amber-50 border border-amber-200 shadow-sm p-5 mb-4">
+          <h2 className="text-sm font-bold uppercase tracking-wide text-amber-700 mb-2">
+            Observaciones / justificación
+          </h2>
+          <p className="text-sm text-amber-900 whitespace-pre-wrap">{ot.observaciones}</p>
+        </div>
+      )}
+
       {ot.pausas.length > 0 && (
         <div className="rounded-2xl bg-white border border-slate-200 shadow-sm p-5">
           <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500 mb-3">Pausas</h2>
-          <ul className="space-y-2 text-sm">
-            {ot.pausas.map((p) => (
-              <li key={p.id} className="flex items-center justify-between gap-3">
-                <span className="font-medium text-slate-800">{p.motivo}</span>
-                <span className="text-slate-500">
-                  {formatHora(p.inicio)} → {p.fin ? formatHora(p.fin) : "abierta"}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <PausasListClient pausas={pausasView} puedeEliminar={puedeEliminarPausa} />
         </div>
       )}
     </section>
@@ -200,7 +230,4 @@ function formatDelta(min: number): string {
 
 function formatDT(d: Date) {
   return formatFechaHora(d);
-}
-function formatHora(d: Date) {
-  return d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
 }

@@ -44,6 +44,7 @@ import {
   type ItemCalculable,
 } from "@/lib/schedule";
 import { obtenerTurnos, evaluarOrdenContraTurno } from "@/lib/turnos";
+import { registrarAuditoria } from "@/lib/auditoria";
 
 const Body = z.object({
   articuloId: z.string().min(1),
@@ -86,6 +87,13 @@ export async function DELETE() {
   const borradas = await prisma.$transaction(async (tx) => {
     const r = await tx.ordenTrabajo.deleteMany({});
     await tx.$executeRawUnsafe('ALTER SEQUENCE "OrdenTrabajo_numero_seq" RESTART WITH 1');
+    await registrarAuditoria(tx, {
+      tipo: "ELIMINAR",
+      entidad: "OT",
+      resumen: `Borró TODAS las órdenes de trabajo (${r.count})`,
+      detalle: { borradas: r.count },
+      usuario: { id: auth.claims.sub, name: auth.claims.name },
+    });
     return r.count;
   });
   return NextResponse.json({ ok: true, borradas });
@@ -228,6 +236,15 @@ export async function POST(req: NextRequest) {
       include: { articulo: { include: { cliente: true } } },
     });
 
+    await registrarAuditoria(prisma, {
+      tipo: "CREAR",
+      entidad: "OT",
+      entidadId: padre.id,
+      resumen: `Creó la OT #${padre.numero} (${data.tipo}, ${cantidadHoy} pzs) + continuación #${continuacion.numero} (${cantidadResto} pzs)`,
+      detalle: { tipo: data.tipo, cantidadHoy, cantidadResto, continuacion: continuacion.numero },
+      usuario: { id: auth.claims.sub, name: auth.claims.name },
+    });
+
     return NextResponse.json({ ok: true, orden: padre, continuacion }, { status: 201 });
   }
 
@@ -247,6 +264,15 @@ export async function POST(req: NextRequest) {
       creadoPorId: auth.claims.sub,
     },
     include: { articulo: { include: { cliente: true } } },
+  });
+
+  await registrarAuditoria(prisma, {
+    tipo: "CREAR",
+    entidad: "OT",
+    entidadId: orden.id,
+    resumen: `Creó la OT #${orden.numero} (${data.tipo}, ${data.cantidad} pzs)`,
+    detalle: { tipo: data.tipo, cantidad: data.cantidad, color: data.color },
+    usuario: { id: auth.claims.sub, name: auth.claims.name },
   });
 
   return NextResponse.json({ ok: true, orden }, { status: 201 });

@@ -15,6 +15,7 @@ import { prisma } from "@/lib/db";
 import { env } from "@/lib/env";
 import { comparePin, isValidPinFormat } from "@/lib/pin";
 import { signSessionToken, sessionCookieOptions, SESSION_COOKIE } from "@/lib/auth";
+import { registrarAuditoria } from "@/lib/auditoria";
 
 const GENERIC_ERROR = { error: "PIN incorrecto" };
 
@@ -100,6 +101,13 @@ export async function POST(req: NextRequest) {
 
   await prisma.authEvent.create({
     data: { userId: matched.id, action: "login.ok", ip, userAgent },
+  });
+  await registrarAuditoria(prisma, {
+    tipo: "LOGIN",
+    entidad: "Auth",
+    entidadId: matched.id,
+    resumen: `${matched.name} inició sesión (PIN)`,
+    usuario: { id: matched.id, name: matched.name },
   });
 
   const jwt = await signSessionToken({

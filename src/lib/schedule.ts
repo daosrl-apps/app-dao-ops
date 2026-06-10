@@ -223,6 +223,68 @@ export function planificar(items: ItemPlan[], inicioJornada: Date): ItemSchedule
 }
 
 // =============================================================================
+// Desvío de tiempo real vs teórico
+// =============================================================================
+
+/// Umbral de desvío a partir del cual se exige justificación al finalizar (±20%).
+export const UMBRAL_DESVIO = 0.2;
+
+/**
+ * Desvío relativo del tiempo real respecto del teórico: `(real - teo) / teo`.
+ * Positivo = se excedió; negativo = terminó antes. Si el teórico es 0 devuelve 0.
+ */
+export function desvioRelativo(realSeg: number, teoricoSeg: number): number {
+  if (teoricoSeg <= 0) return 0;
+  return (realSeg - teoricoSeg) / teoricoSeg;
+}
+
+/**
+ * true si el tiempo real se desvía del teórico más allá del umbral (±20% por
+ * defecto), en cualquier dirección. En ese caso se pide justificación.
+ */
+export function requiereJustificacion(
+  realSeg: number,
+  teoricoSeg: number,
+  umbral: number = UMBRAL_DESVIO,
+): boolean {
+  return Math.abs(desvioRelativo(realSeg, teoricoSeg)) > umbral;
+}
+
+// =============================================================================
+// Re-encadenado al reordenar OTs (drag & drop)
+// =============================================================================
+
+export interface ItemReencadenable extends ItemParaCambio {
+  /** Duración propia del ítem en segundos (no cambia al reordenar). */
+  duracionSeg: number;
+}
+
+/**
+ * Recalcula inicio/fin de una lista de OTs ya ordenada, anclando la primera en
+ * `anclaInicio` y encadenando el resto con el gap aplicable entre cada par
+ * (15 min base, +30 si cambia de color en PINTURA → PINTURA). A diferencia de
+ * `planificar`, no recalcula la duración: la toma de `duracionSeg` (la OT ya
+ * tiene su cantidad/artículo definidos, reordenar no los cambia).
+ */
+export function reencadenar(
+  items: ItemReencadenable[],
+  anclaInicio: Date,
+): { inicio: Date; fin: Date }[] {
+  const out: { inicio: Date; fin: Date }[] = [];
+  let cursor = anclaInicio.getTime();
+  let anterior: ItemReencadenable | null = null;
+  for (const item of items) {
+    const cambioSeg = anterior ? tiempoCambioSeg(anterior, item) : 0;
+    const inicioMs = cursor + cambioSeg * 1000;
+    const finMs = inicioMs + item.duracionSeg * 1000;
+    out.push({ inicio: new Date(inicioMs), fin: new Date(finMs) });
+    cursor = finMs;
+    anterior = item;
+  }
+  return out;
+}
+
+// =============================================================================
 // Orden óptimo propuesto (sección 5.1)
 // =============================================================================
 

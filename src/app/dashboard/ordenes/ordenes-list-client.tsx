@@ -9,6 +9,7 @@ import {
   Clock,
   Droplets,
   GitBranch,
+  GripVertical,
   Paintbrush,
   Trash2,
   XCircle,
@@ -33,13 +34,50 @@ export interface OrdenView {
 export function OrdenesListClient({
   items,
   esAdmin,
+  puedeReordenar,
 }: {
   items: OrdenView[];
   esAdmin: boolean;
+  puedeReordenar: boolean;
 }) {
   const router = useRouter();
   const [borrando, setBorrando] = React.useState(false);
   const [borrandoId, setBorrandoId] = React.useState<string | null>(null);
+
+  // Orden local para el drag & drop (optimista). Se re-sincroniza con el server.
+  const [localItems, setLocalItems] = React.useState<OrdenView[]>(items);
+  const [dragIndex, setDragIndex] = React.useState<number | null>(null);
+  const [reordenando, setReordenando] = React.useState(false);
+  React.useEffect(() => setLocalItems(items), [items]);
+
+  const cantPendientes = localItems.filter((o) => o.estado === "PENDIENTE").length;
+  const hayDnd = puedeReordenar && cantPendientes > 1;
+
+  const onDrop = async (targetIndex: number) => {
+    const from = dragIndex;
+    setDragIndex(null);
+    if (from === null || from === targetIndex) return;
+    if (localItems[from].estado !== "PENDIENTE" || localItems[targetIndex].estado !== "PENDIENTE") {
+      return;
+    }
+    const next = [...localItems];
+    const [m] = next.splice(from, 1);
+    next.splice(targetIndex, 0, m);
+    setLocalItems(next);
+    setReordenando(true);
+    const ids = next.filter((o) => o.estado === "PENDIENTE").map((o) => o.id);
+    const res = await fetch("/api/ordenes/reordenar", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    });
+    setReordenando(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(typeof data.error === "string" ? data.error : "No se pudo reordenar.");
+    }
+    router.refresh();
+  };
 
   const borrarTodas = async () => {
     if (!confirm(`¿Borrar TODAS las órdenes de trabajo? Esta acción no se puede deshacer.`)) return;
@@ -82,13 +120,54 @@ export function OrdenesListClient({
         </div>
       )}
 
+      {hayDnd && (
+        <p className="mb-2 text-sm text-slate-500">
+          Arrastrá las OTs <b>pendientes</b> para reordenarlas. La cola se recalcula
+          respetando los 15 min entre OTs (+30 si cambia el color).
+        </p>
+      )}
+
       <div className="rounded-2xl bg-white shadow-sm border border-slate-200 overflow-hidden">
-        {items.length === 0 ? (
+        {localItems.length === 0 ? (
           <p className="p-6 text-slate-500">Todavía no hay órdenes cargadas.</p>
         ) : (
           <ul className="divide-y divide-slate-100">
-            {items.map((o) => (
-              <li key={o.id} className="flex items-center justify-between p-4 sm:p-5 hover:bg-slate-50 gap-2 sm:gap-3">
+            {localItems.map((o, i) => {
+              const draggable = hayDnd && o.estado === "PENDIENTE";
+              const prev = i > 0 ? localItems[i - 1] : null;
+              const cambioDia = prev != null && !mismoDia(prev.inicioTeorico, o.inicioTeorico);
+              return (
+              <React.Fragment key={o.id}>
+              {cambioDia && (
+                <li className="px-4 py-2 bg-red-50">
+                  <p className="text-center text-xs font-bold text-red-600 tabular-nums">
+                    {formatFecha(prev!.inicioTeorico)}
+                  </p>
+                  <div className="my-1 border-t-2 border-red-500" />
+                  <p className="text-center text-xs font-bold text-red-600 tabular-nums">
+                    {formatFecha(o.inicioTeorico)}
+                  </p>
+                </li>
+              )}
+              <li
+                draggable={draggable}
+                onDragStart={() => draggable && setDragIndex(i)}
+                onDragOver={(e) => {
+                  if (draggable && dragIndex !== null) e.preventDefault();
+                }}
+                onDrop={() => draggable && onDrop(i)}
+                className={
+                  "flex items-center justify-between p-4 sm:p-5 hover:bg-slate-50 gap-2 sm:gap-3 " +
+                  (dragIndex === i ? "opacity-50 " : "") +
+                  (reordenando ? "pointer-events-none " : "")
+                }
+              >
+                {draggable && (
+                  <GripVertical
+                    className="h-5 w-5 shrink-0 cursor-grab text-slate-400"
+                    aria-label="Arrastrar para reordenar"
+                  />
+                )}
                 <Link href={`/dashboard/ordenes/${o.id}`} className="flex items-center gap-2 sm:gap-4 flex-1 min-w-0">
                   <EstadoBadge estado={o.estado} />
                   <TipoBadge tipo={o.tipo} />
@@ -120,7 +199,9 @@ export function OrdenesListClient({
                   <Trash2 className="h-4 w-4" />
                 </button>
               </li>
-            ))}
+              </React.Fragment>
+              );
+            })}
           </ul>
         )}
       </div>
@@ -165,6 +246,17 @@ function TipoBadge({ tipo }: { tipo: "LAVADO" | "PINTURA" }) {
       <Icon className="h-5 w-5 sm:h-3 sm:w-3" />
       <span className="hidden sm:inline">{lavado ? "Lavado" : "Pintura"}</span>
     </span>
+  );
+}
+
+/** true si dos ISO caen en el mismo día calendario (hora local). */
+function mismoDia(aISO: string, bISO: string): boolean {
+  const a = new Date(aISO);
+  const b = new Date(bISO);
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
   );
 }
 

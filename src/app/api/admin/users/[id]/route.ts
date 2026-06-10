@@ -8,6 +8,7 @@ import { prisma } from "@/lib/db";
 import { requireSessionApi } from "@/lib/auth-guards";
 import { hashPin, isValidPinFormat } from "@/lib/pin";
 import { hashPassword, isValidPasswordFormat, isValidUsername } from "@/lib/password";
+import { registrarAuditoria } from "@/lib/auditoria";
 
 const RolEnum = z.enum(["OPERARIO", "SUPERVISOR", "ADMIN"]);
 
@@ -65,6 +66,16 @@ export async function PATCH(
       data,
       select: { id: true, name: true, username: true, role: true, isActive: true },
     });
+    await registrarAuditoria(prisma, {
+      tipo: "EDITAR",
+      entidad: "Usuario",
+      entidadId: user.id,
+      resumen: `Editó el usuario ${user.name}`,
+      detalle: {
+        campos: Object.keys(data).map((k) => (k === "pinHash" ? "pin" : k === "passwordHash" ? "password" : k)),
+      },
+      usuario: { id: auth.claims.sub, name: auth.claims.name },
+    });
     return NextResponse.json({ user });
   } catch (e: unknown) {
     // P2002 = unique violation (username duplicado).
@@ -87,11 +98,21 @@ export async function DELETE(
     return NextResponse.json({ error: "No podés borrarte a vos mismo" }, { status: 400 });
   }
 
-  await prisma.user.update({
+  const user = await prisma.user.update({
     where: { id },
     data: { isActive: false, deletedAt: new Date() },
+    select: { id: true, name: true },
   });
   // También invalidamos sesiones activas.
   await prisma.session.deleteMany({ where: { userId: id } });
+
+  await registrarAuditoria(prisma, {
+    tipo: "ELIMINAR",
+    entidad: "Usuario",
+    entidadId: user.id,
+    resumen: `Dio de baja al usuario ${user.name}`,
+    usuario: { id: auth.claims.sub, name: auth.claims.name },
+  });
+
   return NextResponse.json({ ok: true });
 }

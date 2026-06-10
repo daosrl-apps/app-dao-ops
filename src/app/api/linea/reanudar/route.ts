@@ -5,6 +5,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireSessionApi } from "@/lib/auth-guards";
+import { registrarAuditoria } from "@/lib/auditoria";
 
 export async function POST() {
   const auth = await requireSessionApi();
@@ -18,9 +19,19 @@ export async function POST() {
     return NextResponse.json({ error: "No hay pausa abierta" }, { status: 400 });
   }
 
-  await prisma.pausa.update({
-    where: { id: orden.pausas[0].id },
-    data: { fin: new Date() },
+  const pausa = orden.pausas[0];
+  const fin = new Date();
+  await prisma.pausa.update({ where: { id: pausa.id }, data: { fin } });
+
+  const durSeg = Math.round((fin.getTime() - pausa.inicio.getTime()) / 1000);
+  await registrarAuditoria(prisma, {
+    tipo: "REANUDAR",
+    entidad: "Pausa",
+    entidadId: pausa.id,
+    resumen: `Reanudó la OT #${orden.numero} (pausa de ${Math.round(durSeg / 60)} min)`,
+    detalle: { ordenId: orden.id, ordenNumero: orden.numero, durSeg },
+    usuario: { id: auth.claims.sub, name: auth.claims.name },
   });
-  return NextResponse.json({ ok: true });
+
+  return NextResponse.json({ ok: true, pausaId: pausa.id, durSeg });
 }

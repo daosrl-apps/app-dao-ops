@@ -65,7 +65,7 @@ export function TvClient() {
     );
   }
 
-  const { ordenActual, ordenAnterior, ordenesSiguientes, serverNow } = snapshot;
+  const { ordenActual, ordenAnterior, ordenesSiguientes, serverNow, fabricaCerrada } = snapshot;
 
   return (
     <div className="min-h-screen bg-slate-900 text-white p-4 md:p-8 flex flex-col gap-4">
@@ -76,6 +76,7 @@ export function TvClient() {
         now={now}
         serverNow={new Date(serverNow).getTime()}
         animar={animandoAvance}
+        fabricaCerrada={fabricaCerrada}
       />
       <RowSiguiente
         item={ordenesSiguientes[0] ?? null}
@@ -148,17 +149,21 @@ function RowActual({
   now,
   serverNow,
   animar,
+  fabricaCerrada,
 }: {
   item: LineaOrden | null;
   reloj: string;
   now: number;
   serverNow: number;
   animar: boolean;
+  fabricaCerrada: boolean;
 }) {
   if (!item) {
     return (
       <div className="rounded-3xl bg-black text-white p-6 shadow-2xl flex items-center justify-center min-h-[24vh]">
-        <p className="text-3xl text-slate-400">Línea sin orden en curso</p>
+        <p className="text-3xl text-slate-400">
+          {fabricaCerrada ? "Fábrica cerrada" : "Línea sin orden en curso"}
+        </p>
       </div>
     );
   }

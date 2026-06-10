@@ -19,6 +19,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireSessionApi } from "@/lib/auth-guards";
 import { procesarCsvArticulos } from "@/lib/csv-articulos";
+import { registrarAuditoria } from "@/lib/auditoria";
 
 const Body = z.object({
   csv: z.string().min(1).max(20_000_000),
@@ -127,6 +128,21 @@ export async function POST(req: NextRequest) {
             ({ errores: proceso.errores.slice(0, 200) } as unknown as object)
           : undefined,
     },
+  });
+
+  await registrarAuditoria(prisma, {
+    tipo: "IMPORTAR",
+    entidad: "Articulo",
+    resumen: `Importó artículos desde CSV${nombreArchivo ? ` (${nombreArchivo})` : ""}: ${articulosNuevos} nuevos, ${articulosActualizados} actualizados`,
+    detalle: {
+      nombreArchivo: nombreArchivo ?? null,
+      totalFilas: proceso.totalFilas,
+      filasOk: proceso.filasOk,
+      filasError: proceso.filasError,
+      articulosNuevos,
+      articulosActualizados,
+    },
+    usuario: { id: auth.claims.sub, name: auth.claims.name },
   });
 
   return NextResponse.json({

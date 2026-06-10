@@ -49,7 +49,11 @@ export default async function OrdenesListPage() {
         </Link>
       </div>
 
-      <OrdenesListClient items={items} esAdmin={claims.role === "ADMIN"} />
+      <OrdenesListClient
+        items={items}
+        esAdmin={claims.role === "ADMIN"}
+        puedeReordenar={claims.role !== "OPERARIO"}
+      />
     </section>
   );
 }

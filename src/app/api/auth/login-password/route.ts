@@ -14,6 +14,7 @@ import { env } from "@/lib/env";
 import { comparePassword } from "@/lib/password";
 import { signSessionToken, sessionCookieOptions, SESSION_COOKIE } from "@/lib/auth";
 import { MAX_FAILED_ATTEMPTS, LOCKOUT_DURATION_MS } from "@/lib/pin";
+import { registrarAuditoria } from "@/lib/auditoria";
 
 const GENERIC_ERROR = { error: "Usuario o contraseña incorrectos" };
 
@@ -114,6 +115,13 @@ export async function POST(req: NextRequest) {
 
   await prisma.authEvent.create({
     data: { userId: user.id, action: "login.ok", ip, userAgent },
+  });
+  await registrarAuditoria(prisma, {
+    tipo: "LOGIN",
+    entidad: "Auth",
+    entidadId: user.id,
+    resumen: `${user.name} inició sesión (usuario y contraseña)`,
+    usuario: { id: user.id, name: user.name },
   });
 
   const jwt = await signSessionToken({
