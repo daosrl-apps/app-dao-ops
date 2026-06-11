@@ -284,6 +284,83 @@ export function reencadenar(
   return out;
 }
 
+/**
+ * Resolutor de ventanas de jornada para el reencadenado consciente de turnos.
+ * Se inyecta desde el server (envuelve `turnoQueContiene` / `proximoTurnoDesde`
+ * de `@/lib/turnos`) para que `schedule.ts` no dependa de la DB ni de turnos.
+ */
+export interface VentanaResolver {
+  /** Ventana de jornada que contiene `t`, o null si cae en fábrica cerrada. */
+  ventanaDe(t: Date): { inicio: Date; fin: Date } | null;
+  /** Inicio de la próxima ventana estrictamente posterior a `desde`, o null. */
+  proximoInicio(desde: Date): Date | null;
+}
+
+/**
+ * Dado un inicio candidato y la duración de una OT, devuelve el inicio real
+ * teniendo en cuenta las ventanas de jornada:
+ *  - Si el candidato cae en fábrica cerrada → próxima apertura.
+ *  - Si entra en la ventana pero no termina antes del cierre → próxima apertura.
+ *  - Si la OT es más larga que cualquier ventana → arranca al abrir y se acepta
+ *    el overflow (mejor esfuerzo; no se puede hacer mejor sin partirla).
+ */
+function colocarEnJornada(
+  inicioMs: number,
+  duracionSeg: number,
+  resolver: VentanaResolver,
+): number {
+  const durMs = duracionSeg * 1000;
+  let t = inicioMs;
+  // Cota de iteraciones: como mucho saltamos unas pocas ventanas hacia adelante.
+  for (let i = 0; i < 16; i++) {
+    const v = resolver.ventanaDe(new Date(t));
+    if (!v) {
+      // Fábrica cerrada en `t`: ir a la próxima apertura (sin gap de prep.).
+      const px = resolver.proximoInicio(new Date(t));
+      if (!px) return t; // no hay más ventanas: mejor esfuerzo.
+      t = px.getTime();
+      continue;
+    }
+    if (t + durMs <= v.fin.getTime()) return t; // entra completa.
+    // No termina antes del cierre. Si ya estábamos al inicio de la ventana, la
+    // OT es más larga que toda la ventana: aceptamos el overflow.
+    if (t <= v.inicio.getTime()) return t;
+    const px = resolver.proximoInicio(v.fin);
+    if (!px) return v.inicio.getTime(); // sin próxima ventana: arranca al abrir.
+    t = px.getTime();
+  }
+  return t;
+}
+
+/**
+ * Igual que `reencadenar`, pero respeta las ventanas de jornada (turnos): cada
+ * OT se encadena con su gap (15 min base, +30 si cambia color PINTURA→PINTURA),
+ * pero si el inicio resultante cae con la fábrica cerrada, o la OT no termina
+ * antes del cierre de la jornada, se empuja al inicio de la próxima ventana
+ * (sin gap de preparación, igual que una continuación recién creada).
+ *
+ * Es lo que usa el endpoint de reordenar para que mover una OT recalcule los
+ * horarios de toda la cola respetando el cierre nocturno.
+ */
+export function reencadenarEnJornada(
+  items: ItemReencadenable[],
+  anclaInicio: Date,
+  resolver: VentanaResolver,
+): { inicio: Date; fin: Date }[] {
+  const out: { inicio: Date; fin: Date }[] = [];
+  let cursor = anclaInicio.getTime();
+  let anterior: ItemReencadenable | null = null;
+  for (const item of items) {
+    const cambioSeg = anterior ? tiempoCambioSeg(anterior, item) : 0;
+    const inicioMs = colocarEnJornada(cursor + cambioSeg * 1000, item.duracionSeg, resolver);
+    const finMs = inicioMs + item.duracionSeg * 1000;
+    out.push({ inicio: new Date(inicioMs), fin: new Date(finMs) });
+    cursor = finMs;
+    anterior = item;
+  }
+  return out;
+}
+
 // =============================================================================
 // Orden óptimo propuesto (sección 5.1)
 // =============================================================================

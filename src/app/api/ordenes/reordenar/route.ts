@@ -5,15 +5,17 @@
  * Reordena las OTs PENDIENTE (drag & drop). Re-encadena la cola en el orden
  * recibido anclando la primera en el inicio más temprano que ya tenían (la cola
  * conserva su punto de arranque), respetando el gap de 15 min entre OTs y +30
- * por cambio de color (PINTURA→PINTURA). Las OTs EN_CURSO / FINALIZADO no se
- * tocan. Solo SUPERVISOR / ADMIN.
+ * por cambio de color (PINTURA→PINTURA) y las ventanas de jornada (si una OT no
+ * termina antes del cierre, se empuja al inicio de la próxima ventana). Las OTs
+ * EN_CURSO / FINALIZADO no se tocan. Solo SUPERVISOR / ADMIN.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireSessionApi } from "@/lib/auth-guards";
 import { registrarAuditoria } from "@/lib/auditoria";
-import { reencadenar, type ItemReencadenable } from "@/lib/schedule";
+import { reencadenarEnJornada, type ItemReencadenable } from "@/lib/schedule";
+import { obtenerTurnos, turnoQueContiene, proximoTurnoDesde } from "@/lib/turnos";
 
 const Body = z.object({ ids: z.array(z.string().min(1)).min(1) });
 
@@ -62,7 +64,15 @@ export async function PUT(req: NextRequest) {
     color: o.color,
     duracionSeg: Math.round((o.finTeorico.getTime() - o.inicioTeorico.getTime()) / 1000),
   }));
-  const plan = reencadenar(items, ancla);
+
+  // El reencadenado respeta las ventanas de jornada (igual que la creación):
+  // si una OT no termina antes del cierre, se empuja al inicio de la próxima
+  // ventana. Sin esto, reordenar aplastaba la cola ignorando el cierre nocturno.
+  const turnos = await obtenerTurnos();
+  const plan = reencadenarEnJornada(items, ancla, {
+    ventanaDe: (t) => turnoQueContiene(turnos, t),
+    proximoInicio: (desde) => proximoTurnoDesde(turnos, desde),
+  });
 
   await prisma.$transaction(async (tx) => {
     for (let i = 0; i < ordenadas.length; i++) {

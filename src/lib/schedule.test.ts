@@ -13,12 +13,14 @@ import {
   planificar,
   proponerOrdenOptimo,
   reencadenar,
+  reencadenarEnJornada,
   desvioRelativo,
   requiereJustificacion,
   UMBRAL_DESVIO,
   type ItemParaCambio,
   type ItemPlan,
   type ItemReencadenable,
+  type VentanaResolver,
 } from "@/lib/schedule";
 
 describe("constantes", () => {
@@ -107,6 +109,81 @@ describe("reencadenar", () => {
 
   it("lista vacía devuelve []", () => {
     expect(reencadenar([], t0)).toEqual([]);
+  });
+});
+
+describe("reencadenarEnJornada (respeta el cierre de jornada)", () => {
+  const HORA = 3600;
+
+  // Fábrica abierta 06:00–22:00 todos los días (cierra de noche 22:00–06:00).
+  // Trabajamos en UTC para que el test sea independiente de la TZ del runner.
+  function ventanaDelDia(t: Date) {
+    const y = t.getUTCFullYear();
+    const m = t.getUTCMonth();
+    const d = t.getUTCDate();
+    return {
+      inicio: new Date(Date.UTC(y, m, d, 6, 0, 0)),
+      fin: new Date(Date.UTC(y, m, d, 22, 0, 0)),
+    };
+  }
+  const DIA_MS = 24 * 3600 * 1000;
+  const resolver: VentanaResolver = {
+    ventanaDe(t) {
+      const v = ventanaDelDia(t);
+      return t >= v.inicio && t < v.fin ? v : null;
+    },
+    proximoInicio(desde) {
+      const v = ventanaDelDia(desde);
+      return desde < v.inicio ? v.inicio : new Date(v.inicio.getTime() + DIA_MS);
+    },
+  };
+
+  it("encadena con gap dentro de la ventana (igual que reencadenar)", () => {
+    const items: ItemReencadenable[] = [
+      { tipo: "PINTURA", color: "Rojo", duracionSeg: HORA },
+      { tipo: "PINTURA", color: "Rojo", duracionSeg: HORA },
+    ];
+    const ancla = new Date("2026-06-10T08:00:00.000Z");
+    const r = reencadenarEnJornada(items, ancla, resolver);
+    expect(r[0].inicio.toISOString()).toBe("2026-06-10T08:00:00.000Z");
+    expect(r[1].inicio.getTime()).toBe(r[0].fin.getTime() + GAP_BASE_SEG * 1000);
+  });
+
+  it("empuja al inicio de la próxima ventana la OT que no termina antes del cierre", () => {
+    const items: ItemReencadenable[] = [
+      { tipo: "PINTURA", color: "Rojo", duracionSeg: HORA }, // 20:00–21:00
+      { tipo: "PINTURA", color: "Rojo", duracionSeg: HORA }, // no entra antes de 22:00
+    ];
+    const ancla = new Date("2026-06-10T20:00:00.000Z");
+    const r = reencadenarEnJornada(items, ancla, resolver);
+    expect(r[0].inicio.toISOString()).toBe("2026-06-10T20:00:00.000Z");
+    expect(r[0].fin.toISOString()).toBe("2026-06-10T21:00:00.000Z");
+    // La segunda no termina antes de las 22:00 → arranca al abrir al día
+    // siguiente (06:00), SIN gap de preparación.
+    expect(r[1].inicio.toISOString()).toBe("2026-06-11T06:00:00.000Z");
+    expect(r[1].fin.toISOString()).toBe("2026-06-11T07:00:00.000Z");
+  });
+
+  it("si el ancla cae con la fábrica cerrada, arranca en la próxima apertura", () => {
+    const items: ItemReencadenable[] = [
+      { tipo: "PINTURA", color: "Rojo", duracionSeg: HORA },
+    ];
+    const ancla = new Date("2026-06-10T23:30:00.000Z"); // fábrica cerrada
+    const r = reencadenarEnJornada(items, ancla, resolver);
+    expect(r[0].inicio.toISOString()).toBe("2026-06-11T06:00:00.000Z");
+  });
+
+  it("reordenar reacomoda los horarios respetando el cierre (caso del bug)", () => {
+    // Cola roja (sin cambio de color) cerca del cierre. Mover la última al
+    // frente debe recalcular TODOS los horarios y respetar el corte nocturno.
+    const corta = { tipo: "PINTURA" as const, color: "Rojo", duracionSeg: HORA };
+    const ancla = new Date("2026-06-10T19:00:00.000Z");
+    const r = reencadenarEnJornada([corta, corta, corta], ancla, resolver);
+    // 19:00–20:00, luego 20:15–21:15, la tercera no entra (21:30+1h>22:00) →
+    // salta a mañana 06:00–07:00.
+    expect(r[0].inicio.toISOString()).toBe("2026-06-10T19:00:00.000Z");
+    expect(r[1].inicio.toISOString()).toBe("2026-06-10T20:15:00.000Z");
+    expect(r[2].inicio.toISOString()).toBe("2026-06-11T06:00:00.000Z");
   });
 });
 
