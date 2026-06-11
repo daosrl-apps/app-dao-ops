@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/auth-guards";
 import { formatFechaHora } from "@/lib/utils";
 import { PausasListClient, type PausaItem } from "./pausas-list-client";
+import { EditarOTButton } from "./editar-ot-button";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +49,9 @@ export default async function OrdenDetailPage({
     };
   });
   const puedeEliminarPausa = claims.role === "ADMIN" || claims.role === "SUPERVISOR";
+  const puedeEditar =
+    (claims.role === "ADMIN" || claims.role === "SUPERVISOR") &&
+    (ot.estado === "PENDIENTE" || ot.estado === "EN_CURSO");
 
   const titulo = ot.articulo.descripcion?.trim() || ot.articulo.codigo;
   const isLavado = ot.tipo === "LAVADO";
@@ -86,6 +90,21 @@ export default async function OrdenDetailPage({
           <> · {ot.piezasPorPercha}/percha · {ot.velocidadLavado} m/min</>
         )}
       </p>
+
+      {puedeEditar && (
+        <div className="mb-6">
+          <EditarOTButton
+            orden={{
+              id: ot.id,
+              numero: ot.numero,
+              estado: ot.estado,
+              tipo: ot.tipo,
+              color: ot.color,
+              cantidad: ot.cantidad,
+            }}
+          />
+        </div>
+      )}
 
       <div className="rounded-2xl bg-white border border-slate-200 shadow-sm p-5 mb-4">
         <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500 mb-4">Tiempos</h2>

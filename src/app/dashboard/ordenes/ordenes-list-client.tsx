@@ -6,15 +6,18 @@ import Link from "next/link";
 import {
   AlertCircle,
   CheckCircle2,
+  ChevronRight,
   Clock,
   Droplets,
   GitBranch,
   GripVertical,
   Paintbrush,
+  Pencil,
   Trash2,
   XCircle,
 } from "lucide-react";
 import { formatFecha } from "@/lib/utils";
+import { EditarOTModal } from "./editar-ot-modal";
 
 export interface OrdenView {
   id: string;
@@ -26,6 +29,8 @@ export interface OrdenView {
   cantidadCompletada: number;
   inicioTeorico: string;
   finTeorico: string;
+  inicioReal: string | null;
+  finReal: string | null;
   creadoPor: string;
   articulo: { codigo: string; descripcion: string | null; cliente: string };
   esContinuacion: boolean;
@@ -35,14 +40,17 @@ export function OrdenesListClient({
   items,
   esAdmin,
   puedeReordenar,
+  puedeEditar,
 }: {
   items: OrdenView[];
   esAdmin: boolean;
   puedeReordenar: boolean;
+  puedeEditar: boolean;
 }) {
   const router = useRouter();
   const [borrando, setBorrando] = React.useState(false);
   const [borrandoId, setBorrandoId] = React.useState<string | null>(null);
+  const [editando, setEditando] = React.useState<OrdenView | null>(null);
 
   // Orden local para el drag & drop (optimista). Se re-sincroniza con el server.
   const [localItems, setLocalItems] = React.useState<OrdenView[]>(items);
@@ -50,22 +58,41 @@ export function OrdenesListClient({
   const [reordenando, setReordenando] = React.useState(false);
   React.useEffect(() => setLocalItems(items), [items]);
 
-  const cantPendientes = localItems.filter((o) => o.estado === "PENDIENTE").length;
+  // Activas = pendientes/en curso (lista de trabajo con drag & drop). Viejas =
+  // finalizadas/canceladas (historial), que se agrupan por día y se despliegan.
+  const activas = localItems.filter(
+    (o) => o.estado === "PENDIENTE" || o.estado === "EN_CURSO",
+  );
+  const viejas = localItems.filter(
+    (o) => o.estado === "FINALIZADO" || o.estado === "CANCELADO",
+  );
+
+  const cantPendientes = activas.filter((o) => o.estado === "PENDIENTE").length;
   const hayDnd = puedeReordenar && cantPendientes > 1;
+
+  // Días del historial expandidos (colapsados por defecto).
+  const [diasAbiertos, setDiasAbiertos] = React.useState<Set<string>>(new Set());
+  const toggleDia = (key: string) =>
+    setDiasAbiertos((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
 
   const onDrop = async (targetIndex: number) => {
     const from = dragIndex;
     setDragIndex(null);
     if (from === null || from === targetIndex) return;
-    if (localItems[from].estado !== "PENDIENTE" || localItems[targetIndex].estado !== "PENDIENTE") {
+    if (activas[from].estado !== "PENDIENTE" || activas[targetIndex].estado !== "PENDIENTE") {
       return;
     }
-    const next = [...localItems];
-    const [m] = next.splice(from, 1);
-    next.splice(targetIndex, 0, m);
-    setLocalItems(next);
+    const a = [...activas];
+    const [m] = a.splice(from, 1);
+    a.splice(targetIndex, 0, m);
+    setLocalItems([...a, ...viejas]);
     setReordenando(true);
-    const ids = next.filter((o) => o.estado === "PENDIENTE").map((o) => o.id);
+    const ids = a.filter((o) => o.estado === "PENDIENTE").map((o) => o.id);
     const res = await fetch("/api/ordenes/reordenar", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -130,83 +157,248 @@ export function OrdenesListClient({
       <div className="rounded-2xl bg-white shadow-sm border border-slate-200 overflow-hidden">
         {localItems.length === 0 ? (
           <p className="p-6 text-slate-500">Todavía no hay órdenes cargadas.</p>
+        ) : activas.length === 0 ? (
+          <p className="p-6 text-slate-500">No hay órdenes activas. Mirá el historial abajo.</p>
         ) : (
           <ul className="divide-y divide-slate-100">
-            {localItems.map((o, i) => {
+            {activas.map((o, i) => {
               const draggable = hayDnd && o.estado === "PENDIENTE";
-              const prev = i > 0 ? localItems[i - 1] : null;
+              const prev = i > 0 ? activas[i - 1] : null;
               const cambioDia = prev != null && !mismoDia(prev.inicioTeorico, o.inicioTeorico);
               return (
-              <React.Fragment key={o.id}>
-              {cambioDia && (
-                <li className="px-4 py-2 bg-red-50">
-                  <p className="text-center text-xs font-bold text-red-600 tabular-nums">
-                    {formatFecha(prev!.inicioTeorico)}
-                  </p>
-                  <div className="my-1 border-t-2 border-red-500" />
-                  <p className="text-center text-xs font-bold text-red-600 tabular-nums">
-                    {formatFecha(o.inicioTeorico)}
-                  </p>
-                </li>
-              )}
-              <li
-                draggable={draggable}
-                onDragStart={() => draggable && setDragIndex(i)}
-                onDragOver={(e) => {
-                  if (draggable && dragIndex !== null) e.preventDefault();
-                }}
-                onDrop={() => draggable && onDrop(i)}
-                className={
-                  "flex items-center justify-between p-4 sm:p-5 hover:bg-slate-50 gap-2 sm:gap-3 " +
-                  (dragIndex === i ? "opacity-50 " : "") +
-                  (reordenando ? "pointer-events-none " : "")
-                }
-              >
-                {draggable && (
-                  <GripVertical
-                    className="h-5 w-5 shrink-0 cursor-grab text-slate-400"
-                    aria-label="Arrastrar para reordenar"
+                <React.Fragment key={o.id}>
+                  {cambioDia && (
+                    <li className="px-4 py-2 bg-red-50">
+                      <p className="text-center text-xs font-bold text-red-600 tabular-nums">
+                        {formatFecha(prev!.inicioTeorico)}
+                      </p>
+                      <div className="my-1 border-t-2 border-red-500" />
+                      <p className="text-center text-xs font-bold text-red-600 tabular-nums">
+                        {formatFecha(o.inicioTeorico)}
+                      </p>
+                    </li>
+                  )}
+                  <OrdenRow
+                    o={o}
+                    draggable={draggable}
+                    dragging={dragIndex === i}
+                    reordenando={reordenando}
+                    onDragStart={() => draggable && setDragIndex(i)}
+                    onDragOver={(e) => {
+                      if (draggable && dragIndex !== null) e.preventDefault();
+                    }}
+                    onDrop={() => draggable && onDrop(i)}
+                    puedeEditar={puedeEditar}
+                    onEditar={() => setEditando(o)}
+                    borrandoId={borrandoId}
+                    onBorrar={() => borrarUna(o.id)}
                   />
-                )}
-                <Link href={`/dashboard/ordenes/${o.id}`} className="flex items-center gap-2 sm:gap-4 flex-1 min-w-0">
-                  <EstadoBadge estado={o.estado} />
-                  <TipoBadge tipo={o.tipo} />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-lg font-black text-slate-900 truncate tracking-tight">
-                      #{o.numero} · {o.articulo.descripcion?.trim() || o.articulo.codigo}
-                      {o.esContinuacion && (
-                        <span title="Continuación de otra OT" className="ml-2 inline-flex items-center text-amber-600">
-                          <GitBranch className="h-4 w-4 inline" />
-                        </span>
-                      )}
-                    </p>
-                    <p className="text-sm text-slate-600">
-                      <b>{o.articulo.cliente}</b> · {o.cantidad} pzs
-                      {o.tipo === "PINTURA" && ` · ${o.color}`}
-                    </p>
-                    <p className="text-sm font-medium text-slate-700">
-                      {formatRango(o.inicioTeorico, o.finTeorico)}
-                    </p>
-                  </div>
-                </Link>
-                <button
-                  onClick={() => borrarUna(o.id)}
-                  disabled={borrandoId === o.id || o.estado === "EN_CURSO"}
-                  className="rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50 disabled:opacity-30 disabled:cursor-not-allowed"
-                  aria-label="Borrar"
-                  title={o.estado === "EN_CURSO" ? "No se puede borrar una OT en curso" : "Borrar"}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </li>
-              </React.Fragment>
+                </React.Fragment>
               );
             })}
           </ul>
         )}
       </div>
+
+      {/* Historial: OTs finalizadas/canceladas, agrupadas por día y colapsadas. */}
+      {viejas.length > 0 && (
+        <div className="mt-6">
+          <h2 className="mb-2 text-sm font-bold uppercase tracking-wide text-slate-500">
+            Historial
+          </h2>
+          <div className="space-y-2">
+            {agruparPorDia(viejas).map(({ key, fecha, ordenes }) => {
+              const abierto = diasAbiertos.has(key);
+              return (
+                <div
+                  key={key}
+                  className="rounded-2xl bg-white shadow-sm border border-slate-200 overflow-hidden"
+                >
+                  <button
+                    onClick={() => toggleDia(key)}
+                    className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-slate-50"
+                  >
+                    <span className="flex items-center gap-2">
+                      <ChevronRight
+                        className={
+                          "h-5 w-5 text-slate-400 transition-transform " +
+                          (abierto ? "rotate-90" : "")
+                        }
+                      />
+                      <span className="font-bold capitalize text-slate-800">{fecha}</span>
+                    </span>
+                    <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-600 tabular-nums">
+                      {ordenes.length} {ordenes.length === 1 ? "OT" : "OTs"}
+                    </span>
+                  </button>
+                  {abierto && (
+                    <ul className="divide-y divide-slate-100 border-t border-slate-100">
+                      {ordenes.map((o) => (
+                        <OrdenRow
+                          key={o.id}
+                          o={o}
+                          draggable={false}
+                          dragging={false}
+                          reordenando={false}
+                          puedeEditar={false}
+                          onEditar={() => {}}
+                          borrandoId={borrandoId}
+                          onBorrar={() => borrarUna(o.id)}
+                        />
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {editando && (
+        <EditarOTModal
+          orden={editando}
+          onClose={() => setEditando(null)}
+          onDone={() => {
+            setEditando(null);
+            router.refresh();
+          }}
+        />
+      )}
     </>
   );
+}
+
+/**
+ * Fila de una OT (se usa en la lista activa y en el historial). Cuando
+ * `draggable` es true muestra el handle de arrastre y conecta los handlers de
+ * drag & drop; en el historial va sin arrastre.
+ */
+function OrdenRow({
+  o,
+  draggable,
+  dragging,
+  reordenando,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  puedeEditar,
+  onEditar,
+  borrandoId,
+  onBorrar,
+}: {
+  o: OrdenView;
+  draggable: boolean;
+  dragging: boolean;
+  reordenando: boolean;
+  onDragStart?: () => void;
+  onDragOver?: (e: React.DragEvent) => void;
+  onDrop?: () => void;
+  puedeEditar: boolean;
+  onEditar: () => void;
+  borrandoId: string | null;
+  onBorrar: () => void;
+}) {
+  return (
+    <li
+      draggable={draggable}
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      className={
+        "flex items-center justify-between p-4 sm:p-5 hover:bg-slate-50 gap-2 sm:gap-3 " +
+        (dragging ? "opacity-50 " : "") +
+        (reordenando ? "pointer-events-none " : "")
+      }
+    >
+      {draggable && (
+        <GripVertical
+          className="h-5 w-5 shrink-0 cursor-grab text-slate-400"
+          aria-label="Arrastrar para reordenar"
+        />
+      )}
+      <Link
+        href={`/dashboard/ordenes/${o.id}`}
+        className="flex items-center gap-2 sm:gap-4 flex-1 min-w-0"
+      >
+        <EstadoBadge estado={o.estado} />
+        <TipoBadge tipo={o.tipo} />
+        <div className="min-w-0 flex-1">
+          <p className="text-lg font-black text-slate-900 truncate tracking-tight">
+            #{o.numero} · {o.articulo.descripcion?.trim() || o.articulo.codigo}
+            {o.esContinuacion && (
+              <span
+                title="Continuación de otra OT"
+                className="ml-2 inline-flex items-center text-amber-600"
+              >
+                <GitBranch className="h-4 w-4 inline" />
+              </span>
+            )}
+          </p>
+          <p className="text-sm text-slate-600">
+            <b>{o.articulo.cliente}</b> · {o.cantidad} pzs
+            {o.tipo === "PINTURA" && ` · ${o.color}`}
+          </p>
+          {o.finReal ? (
+            <p className="text-sm font-medium text-slate-700">
+              <span className="text-slate-400">real:</span>{" "}
+              {formatRango(o.inicioReal ?? o.inicioTeorico, o.finReal)}
+            </p>
+          ) : (
+            <p className="text-sm font-medium text-slate-700">
+              {formatRango(o.inicioTeorico, o.finTeorico)}
+            </p>
+          )}
+        </div>
+      </Link>
+      {puedeEditar && (o.estado === "PENDIENTE" || o.estado === "EN_CURSO") && (
+        <button
+          onClick={onEditar}
+          className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-100"
+          aria-label="Editar"
+          title="Editar (dividir / corregir cantidad)"
+        >
+          <Pencil className="h-4 w-4" />
+        </button>
+      )}
+      <button
+        onClick={onBorrar}
+        disabled={borrandoId === o.id || o.estado === "EN_CURSO"}
+        className="rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50 disabled:opacity-30 disabled:cursor-not-allowed"
+        aria-label="Borrar"
+        title={o.estado === "EN_CURSO" ? "No se puede borrar una OT en curso" : "Borrar"}
+      >
+        <Trash2 className="h-4 w-4" />
+      </button>
+    </li>
+  );
+}
+
+/**
+ * Agrupa OTs por día calendario (según `inicioTeorico`, hora local) y devuelve
+ * los grupos del más reciente al más antiguo. Dentro de cada día conserva el
+ * orden recibido.
+ */
+function agruparPorDia(
+  ordenes: OrdenView[],
+): { key: string; fecha: string; ordenes: OrdenView[] }[] {
+  const grupos = new Map<string, OrdenView[]>();
+  for (const o of ordenes) {
+    const d = new Date(o.inicioTeorico);
+    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    const arr = grupos.get(key);
+    if (arr) arr.push(o);
+    else grupos.set(key, [o]);
+  }
+  return [...grupos.entries()]
+    .map(([key, ords]) => ({
+      key,
+      fecha: formatFecha(ords[0].inicioTeorico),
+      ordenes: ords,
+      orden: new Date(ords[0].inicioTeorico).getTime(),
+    }))
+    .sort((a, b) => b.orden - a.orden)
+    .map(({ key, fecha, ordenes }) => ({ key, fecha, ordenes }));
 }
 
 // En celular: solo ícono (un poco más grande). Desde sm: ícono + texto.

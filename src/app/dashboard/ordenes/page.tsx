@@ -9,14 +9,29 @@ export const dynamic = "force-dynamic";
 export default async function OrdenesListPage() {
   const claims = await requireSession(["SUPERVISOR", "ADMIN", "OPERARIO"]);
 
-  const ordenes = await prisma.ordenTrabajo.findMany({
-    take: 200,
-    orderBy: { inicioTeorico: "asc" },
-    include: {
-      articulo: { include: { cliente: true } },
-      creadoPor: { select: { name: true } },
-    },
-  });
+  // Activas (pendientes/en curso) sin límite para que la cola de trabajo nunca
+  // se trunque; historial (finalizadas/canceladas) acotado a las 200 más
+  // recientes — el cliente las agrupa por día y las muestra colapsadas.
+  const [activas, viejas] = await Promise.all([
+    prisma.ordenTrabajo.findMany({
+      where: { estado: { in: ["PENDIENTE", "EN_CURSO"] } },
+      orderBy: { inicioTeorico: "asc" },
+      include: {
+        articulo: { include: { cliente: true } },
+        creadoPor: { select: { name: true } },
+      },
+    }),
+    prisma.ordenTrabajo.findMany({
+      where: { estado: { in: ["FINALIZADO", "CANCELADO"] } },
+      take: 200,
+      orderBy: { inicioTeorico: "desc" },
+      include: {
+        articulo: { include: { cliente: true } },
+        creadoPor: { select: { name: true } },
+      },
+    }),
+  ]);
+  const ordenes = [...activas, ...viejas];
 
   const items: OrdenView[] = ordenes.map((o) => ({
     id: o.id,
@@ -28,6 +43,8 @@ export default async function OrdenesListPage() {
     cantidadCompletada: o.cantidadCompletada,
     inicioTeorico: o.inicioTeorico.toISOString(),
     finTeorico: o.finTeorico.toISOString(),
+    inicioReal: o.inicioReal?.toISOString() ?? null,
+    finReal: o.finReal?.toISOString() ?? null,
     creadoPor: o.creadoPor.name,
     articulo: {
       codigo: o.articulo.codigo,
@@ -53,6 +70,7 @@ export default async function OrdenesListPage() {
         items={items}
         esAdmin={claims.role === "ADMIN"}
         puedeReordenar={claims.role !== "OPERARIO"}
+        puedeEditar={claims.role !== "OPERARIO"}
       />
     </section>
   );
