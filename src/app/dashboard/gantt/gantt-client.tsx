@@ -44,7 +44,7 @@ function spanReal(o: GanttOT, nowMs: number | null): { start: number; end: numbe
 }
 
 const HORA_MS = 3_600_000;
-const VENTANA_DEFAULT_MS = 48 * HORA_MS;
+const VENTANA_DEFAULT_MS = 10 * HORA_MS;
 
 export function GanttClient({ items }: { items: GanttOT[] }) {
   const router = useRouter();
@@ -52,7 +52,7 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
   const [verProyectado, setVerProyectado] = React.useState(true);
   const [verReal, setVerReal] = React.useState(true);
   // Ventana visible (sub-rango del total). `null` hasta que el efecto de montaje
-  // la inicializa en "las últimas 48 h".
+  // la inicializa en "las últimas 10 h".
   const [view, setView] = React.useState<{ start: number; end: number } | null>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
 
@@ -83,7 +83,7 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
   const fullMinMs = hayDatos ? Math.min(...puntos) : 0;
   const fullMaxMs = hayDatos ? Math.max(...puntos) : 0;
 
-  // Inicializa la ventana a las últimas 48 h la primera vez que hay datos.
+  // Inicializa la ventana a las últimas 10 h la primera vez que hay datos.
   React.useEffect(() => {
     if (!hayDatos) return;
     setView((cur) => cur ?? ventanaUltimas(fullMinMs, fullMaxMs, Date.now(), VENTANA_DEFAULT_MS));
