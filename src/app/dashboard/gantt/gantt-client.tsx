@@ -43,11 +43,18 @@ function spanReal(o: GanttOT, nowMs: number | null): { start: number; end: numbe
   return { start, end: Math.max(end, start) };
 }
 
+const HORA_MS = 3_600_000;
+const VENTANA_DEFAULT_MS = 48 * HORA_MS;
+
 export function GanttClient({ items }: { items: GanttOT[] }) {
   const router = useRouter();
   const [px, setPx] = React.useState(PX_DEFAULT);
   const [verProyectado, setVerProyectado] = React.useState(true);
   const [verReal, setVerReal] = React.useState(true);
+  // Ventana visible (sub-rango del total). `null` hasta que el efecto de montaje
+  // la inicializa en "las últimas 48 h".
+  const [view, setView] = React.useState<{ start: number; end: number } | null>(null);
+  const scrollRef = React.useRef<HTMLDivElement>(null);
 
   // `now` arranca null para no romper la hidratación (server y cliente coinciden);
   // tras montar lo seteamos y, si hay OTs en curso, lo refrescamos cada minuto.
@@ -60,17 +67,9 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
     return () => clearInterval(id);
   }, [items]);
 
-  if (items.length === 0) {
-    return (
-      <div className="rounded-2xl bg-white shadow-sm border border-slate-200 p-6 text-slate-500">
-        No hay órdenes para mostrar.
-      </div>
-    );
-  }
-
   const reales = items.map((o) => spanReal(o, now));
 
-  // Rango temporal: unión de los segmentos visibles según el filtro.
+  // Extensión total: unión de los segmentos visibles según el filtro.
   const puntos: number[] = [];
   items.forEach((o, i) => {
     if (verProyectado) {
@@ -80,9 +79,43 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
       puntos.push(reales[i]!.start, reales[i]!.end);
     }
   });
+  const hayDatos = puntos.length > 0;
+  const fullMinMs = hayDatos ? Math.min(...puntos) : 0;
+  const fullMaxMs = hayDatos ? Math.max(...puntos) : 0;
+
+  // Inicializa la ventana a las últimas 48 h la primera vez que hay datos.
+  React.useEffect(() => {
+    if (!hayDatos) return;
+    setView((cur) => cur ?? ventanaUltimas(fullMinMs, fullMaxMs, Date.now(), VENTANA_DEFAULT_MS));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hayDatos, fullMinMs, fullMaxMs]);
+
+  // Al cambiar la ventana, reseteamos el scroll horizontal al inicio.
+  React.useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollLeft = 0;
+  }, [view?.start, view?.end]);
 
   const zoom = (factor: number) =>
     setPx((p) => Math.min(PX_MAX, Math.max(PX_MIN, Math.round(p * factor))));
+
+  // Presets de ventana: últimas N horas terminando en "ahora" (o en el fin de
+  // los datos si "ahora" cae después). "Todo" muestra la extensión completa.
+  const aplicarVentana = (widthMs: number) => {
+    if (!hayDatos) return;
+    const span = fullMaxMs - fullMinMs;
+    const w = Math.min(widthMs, span);
+    const end = Math.min(now ?? fullMaxMs, fullMaxMs);
+    setView(clampVentana(end - w, end, fullMinMs, fullMaxMs));
+  };
+  const verTodo = () => hayDatos && setView({ start: fullMinMs, end: fullMaxMs });
+
+  if (items.length === 0) {
+    return (
+      <div className="rounded-2xl bg-white shadow-sm border border-slate-200 p-6 text-slate-500">
+        No hay órdenes para mostrar.
+      </div>
+    );
+  }
 
   const toolbar = (
     <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
@@ -119,7 +152,7 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
     </div>
   );
 
-  if (puntos.length === 0) {
+  if (!hayDatos) {
     return (
       <>
         {toolbar}
@@ -132,12 +165,31 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
     );
   }
 
-  const min = piso(new Date(Math.min(...puntos)));
-  const max = techo(new Date(Math.max(...puntos)));
-  const totalHoras = Math.max(1, Math.round((max.getTime() - min.getTime()) / 3_600_000));
+  // Ventana efectiva (antes de que el efecto inicialice `view`, usamos todo).
+  const winStartMs = view ? view.start : fullMinMs;
+  const winEndMs = view ? view.end : fullMaxMs;
+  const min = piso(new Date(winStartMs));
+  const max = techo(new Date(winEndMs));
+  const totalHoras = Math.max(1, Math.round((max.getTime() - min.getTime()) / HORA_MS));
   const trackW = totalHoras * px;
 
-  const xDe = (ms: number) => ((ms - min.getTime()) / 3_600_000) * px;
+  const xDe = (ms: number) => ((ms - min.getTime()) / HORA_MS) * px;
+
+  // Solo las OTs que intersectan la ventana visible.
+  const winA = min.getTime();
+  const winB = max.getTime();
+  const filas = items
+    .map((o, idx) => ({ o, idx }))
+    .filter(({ o, idx }) => {
+      const okProy =
+        verProyectado &&
+        new Date(o.inicio).getTime() < winB &&
+        new Date(o.fin).getTime() > winA;
+      const rs = reales[idx];
+      const okReal = verReal && rs != null && rs.start < winB && rs.end > winA;
+      return okProy || okReal;
+    });
+  const ocultas = items.length - filas.length;
 
   // Ticks por hora; etiqueta de hora cada `stepH` para que no se amontonen.
   const stepH = Math.max(1, Math.ceil(46 / px));
@@ -169,7 +221,32 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
     <>
       {toolbar}
 
-      <div className="overflow-auto max-h-[75vh] rounded-2xl bg-white shadow-sm border border-slate-200">
+      {/* Barra selectora de ventana temporal + presets. */}
+      <div className="mb-3 rounded-2xl bg-white shadow-sm border border-slate-200 p-3">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <span className="text-sm font-semibold text-slate-700 tabular-nums">
+            {rangoVentana(winStartMs, winEndMs)}
+          </span>
+          <div className="flex items-center gap-1">
+            <PresetBtn onClick={() => aplicarVentana(24 * HORA_MS)}>24 h</PresetBtn>
+            <PresetBtn onClick={() => aplicarVentana(48 * HORA_MS)}>48 h</PresetBtn>
+            <PresetBtn onClick={() => aplicarVentana(7 * 24 * HORA_MS)}>7 d</PresetBtn>
+            <PresetBtn onClick={verTodo}>Todo</PresetBtn>
+          </div>
+        </div>
+        <BrushSelector
+          fullMin={fullMinMs}
+          fullMax={fullMaxMs}
+          value={{ start: winStartMs, end: winEndMs }}
+          now={now}
+          onChange={(start, end) => setView({ start, end })}
+        />
+      </div>
+
+      <div
+        ref={scrollRef}
+        className="overflow-auto max-h-[75vh] rounded-2xl bg-white shadow-sm border border-slate-200"
+      >
         <div style={{ width: LABEL_W + trackW }}>
           {/* Encabezado: fila de fecha + fila de hora (sticky arriba) */}
           <div className="sticky top-0 z-30 bg-slate-50">
@@ -249,8 +326,8 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
             </div>
           </div>
 
-          {/* Filas de OTs */}
-          {items.map((o, idx) => {
+          {/* Filas de OTs (solo las que intersectan la ventana) */}
+          {filas.map(({ o, idx }, rowI) => {
             const lavado = o.tipo === "LAVADO";
             const rs = reales[idx];
             const proyLeft = xDe(new Date(o.inicio).getTime());
@@ -258,7 +335,7 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
             return (
               <div
                 key={o.id}
-                className={"flex items-stretch " + (idx % 2 ? "bg-white" : "bg-slate-50/40")}
+                className={"flex items-stretch " + (rowI % 2 ? "bg-white" : "bg-slate-50/40")}
                 style={{ minHeight: ROW_H }}
               >
                 <button
@@ -275,7 +352,10 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
                     #{o.numero} {o.titulo}
                   </span>
                 </button>
-                <div className="relative border-b border-slate-100" style={{ width: trackW }}>
+                <div
+                  className="relative overflow-hidden border-b border-slate-100"
+                  style={{ width: trackW }}
+                >
                   {ticks.map((t, i) => (
                     <div
                       key={i}
@@ -354,8 +434,20 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
               </div>
             );
           })}
+          {filas.length === 0 && (
+            <div className="p-6 text-sm text-slate-500" style={{ width: LABEL_W + trackW }}>
+              Ninguna OT cae en la ventana seleccionada. Movés la barra de arriba o tocás{" "}
+              <b>Todo</b> para ver el rango completo.
+            </div>
+          )}
         </div>
       </div>
+
+      {ocultas > 0 && (
+        <p className="mt-2 text-sm text-slate-500">
+          Mostrando <b>{filas.length}</b> de {items.length} OTs · {ocultas} fuera de la ventana.
+        </p>
+      )}
 
       <div className="mt-3 flex flex-wrap items-center gap-4 text-sm text-slate-600">
         <Leyenda className="bg-sky-500" label="Proyectado: Lavado" />
@@ -380,6 +472,106 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
         </span>
       </div>
     </>
+  );
+}
+
+function PresetBtn({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-bold text-slate-700 hover:bg-slate-100"
+    >
+      {children}
+    </button>
+  );
+}
+
+/**
+ * Barra selectora de ventana temporal (brush). Representa toda la extensión de
+ * datos (`fullMin`..`fullMax`) con un recuadro que se puede arrastrar para
+ * desplazar la ventana y redimensionar desde los bordes. Soporta mouse y touch
+ * vía pointer events. El cambio se comunica con `onChange(start, end)`.
+ */
+function BrushSelector({
+  fullMin,
+  fullMax,
+  value,
+  now,
+  onChange,
+}: {
+  fullMin: number;
+  fullMax: number;
+  value: { start: number; end: number };
+  now: number | null;
+  onChange: (start: number, end: number) => void;
+}) {
+  const ref = React.useRef<HTMLDivElement>(null);
+  const drag = React.useRef<null | { mode: "pan" | "l" | "r"; x: number; s: number; e: number }>(
+    null,
+  );
+  const span = Math.max(1, fullMax - fullMin);
+  const pct = (t: number) => ((t - fullMin) / span) * 100;
+  const leftPct = Math.max(0, Math.min(100, pct(value.start)));
+  const widthPct = Math.max(0.5, Math.min(100 - leftPct, pct(value.end) - pct(value.start)));
+  const nowPct = now != null && now >= fullMin && now <= fullMax ? pct(now) : null;
+
+  const begin = (mode: "pan" | "l" | "r") => (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    ref.current?.setPointerCapture(e.pointerId);
+    drag.current = { mode, x: e.clientX, s: value.start, e: value.end };
+  };
+  const onMove = (e: React.PointerEvent) => {
+    const d = drag.current;
+    if (!d || !ref.current) return;
+    const w = ref.current.getBoundingClientRect().width || 1;
+    const dms = ((e.clientX - d.x) / w) * span;
+    const minW = HORA_MS;
+    if (d.mode === "pan") {
+      const o = clampVentana(d.s + dms, d.e + dms, fullMin, fullMax);
+      onChange(o.start, o.end);
+    } else if (d.mode === "l") {
+      const s = Math.min(Math.max(d.s + dms, fullMin), d.e - minW);
+      onChange(s, d.e);
+    } else {
+      const en = Math.max(Math.min(d.e + dms, fullMax), d.s + minW);
+      onChange(d.s, en);
+    }
+  };
+  const end = () => {
+    drag.current = null;
+  };
+
+  return (
+    <div
+      ref={ref}
+      className="relative h-10 select-none touch-none rounded-lg border border-slate-200 bg-slate-100"
+      onPointerMove={onMove}
+      onPointerUp={end}
+      onPointerCancel={end}
+    >
+      {nowPct != null && (
+        <div className="absolute top-0 h-full w-px bg-[#1627b1]" style={{ left: `${nowPct}%` }} />
+      )}
+      <div
+        className="absolute top-0 h-full cursor-grab rounded-md border-2 border-[#1627b1] bg-[#1627b1]/15 active:cursor-grabbing"
+        style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
+        onPointerDown={begin("pan")}
+      >
+        <div
+          className="absolute -left-1.5 top-0 flex h-full w-3 cursor-ew-resize items-center justify-center"
+          onPointerDown={begin("l")}
+        >
+          <span className="h-5 w-1 rounded bg-[#1627b1]" />
+        </div>
+        <div
+          className="absolute -right-1.5 top-0 flex h-full w-3 cursor-ew-resize items-center justify-center"
+          onPointerDown={begin("r")}
+        >
+          <span className="h-5 w-1 rounded bg-[#1627b1]" />
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -449,4 +641,45 @@ function rango(inicioISO: string, finISO: string): string {
 }
 function rangoMs(inicioMs: number, finMs: number): string {
   return `${formatFechaHora(new Date(inicioMs))} → ${formatFechaHora(new Date(finMs))}`;
+}
+function rangoVentana(inicioMs: number, finMs: number): string {
+  return `${formatFechaHora(new Date(inicioMs))} → ${formatFechaHora(new Date(finMs))}`;
+}
+
+/**
+ * Ventana de las últimas `widthMs` ms terminando en `nowMs` (o en `fullMax` si
+ * "ahora" cae después de los datos), acotada al rango disponible.
+ */
+function ventanaUltimas(
+  fullMin: number,
+  fullMax: number,
+  nowMs: number,
+  widthMs: number,
+): { start: number; end: number } {
+  const span = fullMax - fullMin;
+  const w = Math.min(widthMs, span);
+  const end = Math.min(nowMs, fullMax);
+  return clampVentana(end - w, end, fullMin, fullMax);
+}
+
+/** Acota [start, end] a [fullMin, fullMax] conservando el ancho cuando se puede. */
+function clampVentana(
+  start: number,
+  end: number,
+  fullMin: number,
+  fullMax: number,
+): { start: number; end: number } {
+  const w = Math.min(end - start, fullMax - fullMin);
+  let s = start;
+  let e = start + w;
+  if (s < fullMin) {
+    s = fullMin;
+    e = fullMin + w;
+  }
+  if (e > fullMax) {
+    e = fullMax;
+    s = fullMax - w;
+  }
+  if (s < fullMin) s = fullMin;
+  return { start: s, end: e };
 }
