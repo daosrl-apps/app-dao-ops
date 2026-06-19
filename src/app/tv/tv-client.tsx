@@ -17,7 +17,8 @@
  * las filas suben un escalón con una animación CSS.
  */
 import * as React from "react";
-import { Droplets, Paintbrush } from "lucide-react";
+import Link from "next/link";
+import { Droplets, Paintbrush, LayoutGrid } from "lucide-react";
 import type { LineaSnapshot, LineaOrden } from "@/lib/linea";
 
 const POLL_MS = 2000;
@@ -69,6 +70,12 @@ export function TvClient() {
 
   return (
     <div className="min-h-screen bg-slate-900 text-white p-4 md:p-8 flex flex-col gap-4">
+      <Link
+        href="/tv"
+        className="fixed top-3 right-3 z-50 inline-flex items-center gap-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 px-3 py-2 text-sm text-slate-300"
+      >
+        <LayoutGrid className="h-4 w-4" /> Menú
+      </Link>
       <RowAnterior item={ordenAnterior} animar={animandoAvance} />
       <RowActual
         item={ordenActual}
