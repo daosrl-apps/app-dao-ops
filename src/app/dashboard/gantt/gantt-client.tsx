@@ -44,7 +44,8 @@ function spanReal(o: GanttOT, nowMs: number | null): { start: number; end: numbe
 }
 
 const HORA_MS = 3_600_000;
-const VENTANA_DEFAULT_MS = 10 * HORA_MS;
+/// Ventana por defecto: 24 h hacia atrás + 24 h hacia adelante, con "ahora" en el medio.
+const VENTANA_DEFAULT_SEMI_MS = 24 * HORA_MS;
 
 export function GanttClient({ items }: { items: GanttOT[] }) {
   const router = useRouter();
@@ -83,10 +84,10 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
   const fullMinMs = hayDatos ? Math.min(...puntos) : 0;
   const fullMaxMs = hayDatos ? Math.max(...puntos) : 0;
 
-  // Inicializa la ventana a las últimas 10 h la primera vez que hay datos.
+  // Inicializa la ventana centrada en "ahora" (±24 h) la primera vez que hay datos.
   React.useEffect(() => {
     if (!hayDatos) return;
-    setView((cur) => cur ?? ventanaUltimas(fullMinMs, fullMaxMs, Date.now(), VENTANA_DEFAULT_MS));
+    setView((cur) => cur ?? ventanaCentrada(Date.now(), VENTANA_DEFAULT_SEMI_MS));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hayDatos, fullMinMs, fullMaxMs]);
 
@@ -273,13 +274,13 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
                 {limites.map((x, li) => (
                   <div
                     key={"limh" + li}
-                    className="absolute top-0 h-full border-l-2 border-red-500/60"
+                    className="absolute top-0 h-full border-l-2 border-amber-500/70"
                     style={{ left: x }}
                   />
                 ))}
                 {nowX != null && (
                   <div
-                    className="absolute top-0 h-full border-l-2 border-[#1627b1]"
+                    className="absolute top-0 h-full border-l-2 border-red-600"
                     style={{ left: nowX }}
                   />
                 )}
@@ -308,16 +309,16 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
                 {limites.map((x, li) => (
                   <div
                     key={"limhh" + li}
-                    className="absolute top-0 h-full border-l-2 border-red-500/60"
+                    className="absolute top-0 h-full border-l-2 border-amber-500/70"
                     style={{ left: x }}
                   />
                 ))}
                 {nowX != null && (
                   <div
-                    className="absolute top-0 h-full border-l-2 border-[#1627b1]"
+                    className="absolute top-0 h-full border-l-2 border-red-600"
                     style={{ left: nowX }}
                   >
-                    <span className="absolute -top-0.5 left-1 rounded bg-[#1627b1] px-1 text-[10px] font-bold text-white whitespace-nowrap">
+                    <span className="absolute -top-0.5 left-1 rounded bg-red-600 px-1 text-[10px] font-bold text-white whitespace-nowrap">
                       ahora {now != null ? formatHHMM(now) : ""}
                     </span>
                   </div>
@@ -368,7 +369,7 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
                   {limites.map((x, li) => (
                     <div
                       key={"lim" + li}
-                      className="absolute top-0 h-full border-l-2 border-red-500/60"
+                      className="absolute top-0 h-full border-l-2 border-amber-500/70"
                       style={{ left: x }}
                     />
                   ))}
@@ -376,7 +377,7 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
                   {/* Hora actual: línea vertical */}
                   {nowX != null && (
                     <div
-                      className="absolute top-0 h-full border-l-2 border-[#1627b1]"
+                      className="absolute top-0 h-full border-l-2 border-red-600"
                       style={{ left: nowX }}
                     />
                   )}
@@ -463,11 +464,11 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
         </span>
         <span className="text-slate-300">|</span>
         <span className="inline-flex items-center gap-2">
-          <span className="inline-block h-4 w-0.5 bg-[#1627b1]" />
+          <span className="inline-block h-4 w-0.5 bg-red-600" />
           Ahora
         </span>
         <span className="inline-flex items-center gap-2">
-          <span className="inline-block h-4 w-0.5 bg-red-500" />
+          <span className="inline-block h-4 w-0.5 bg-amber-500" />
           Cambio de día
         </span>
       </div>
@@ -551,7 +552,7 @@ function BrushSelector({
       onPointerCancel={end}
     >
       {nowPct != null && (
-        <div className="absolute top-0 h-full w-px bg-[#1627b1]" style={{ left: `${nowPct}%` }} />
+        <div className="absolute top-0 h-full w-px bg-red-600" style={{ left: `${nowPct}%` }} />
       )}
       <div
         className="absolute top-0 h-full cursor-grab rounded-md border-2 border-[#1627b1] bg-[#1627b1]/15 active:cursor-grabbing"
@@ -646,20 +647,9 @@ function rangoVentana(inicioMs: number, finMs: number): string {
   return `${formatFechaHora(new Date(inicioMs))} → ${formatFechaHora(new Date(finMs))}`;
 }
 
-/**
- * Ventana de las últimas `widthMs` ms terminando en `nowMs` (o en `fullMax` si
- * "ahora" cae después de los datos), acotada al rango disponible.
- */
-function ventanaUltimas(
-  fullMin: number,
-  fullMax: number,
-  nowMs: number,
-  widthMs: number,
-): { start: number; end: number } {
-  const span = fullMax - fullMin;
-  const w = Math.min(widthMs, span);
-  const end = Math.min(nowMs, fullMax);
-  return clampVentana(end - w, end, fullMin, fullMax);
+/** Ventana centrada en `nowMs`, abarcando `semiMs` hacia cada lado. */
+function ventanaCentrada(nowMs: number, semiMs: number): { start: number; end: number } {
+  return { start: nowMs - semiMs, end: nowMs + semiMs };
 }
 
 /** Acota [start, end] a [fullMin, fullMax] conservando el ancho cuando se puede. */
