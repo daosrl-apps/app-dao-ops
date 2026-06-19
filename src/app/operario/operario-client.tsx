@@ -10,8 +10,19 @@
  */
 import * as React from "react";
 import Link from "next/link";
-import { Pause, Play, CheckCircle2, LogOut, Home, Droplets, Paintbrush, Clock } from "lucide-react";
-import type { LineaSnapshot, LineaOrden } from "@/lib/linea";
+import {
+  Pause,
+  Play,
+  CheckCircle2,
+  LogOut,
+  Home,
+  Droplets,
+  Paintbrush,
+  Clock,
+  CalendarDays,
+  X,
+} from "lucide-react";
+import type { LineaSnapshot, LineaOrden, LineaAgenda } from "@/lib/linea";
 
 const POLL_MS = 2000;
 
@@ -31,6 +42,10 @@ export function OperarioClient({ userName, role }: { userName: string; role: str
   // Editar minutos de la última pausa (solo supervisor / admin).
   const [editarMinutosOpen, setEditarMinutosOpen] = React.useState(false);
   const [minutosEdit, setMinutosEdit] = React.useState("");
+  // Agenda: lista (solo lectura) de OTs de hoy y mañana.
+  const [agendaOpen, setAgendaOpen] = React.useState(false);
+  const [agenda, setAgenda] = React.useState<LineaAgenda | null>(null);
+  const [agendaLoading, setAgendaLoading] = React.useState(false);
 
   const esSupervisor = role === "ADMIN" || role === "SUPERVISOR";
 
@@ -77,6 +92,14 @@ export function OperarioClient({ userName, role }: { userName: string; role: str
     await fetch("/api/linea/reanudar", { method: "POST" });
     await fetchSnapshot();
     setSubmitting(false);
+  };
+
+  const abrirAgenda = async () => {
+    setAgendaOpen(true);
+    setAgendaLoading(true);
+    const res = await fetch("/api/linea/agenda", { cache: "no-store" });
+    if (res.ok) setAgenda(await res.json());
+    setAgendaLoading(false);
   };
 
   const actual = snapshot?.ordenActual ?? null;
@@ -191,8 +214,8 @@ export function OperarioClient({ userName, role }: { userName: string; role: str
           />
         )}
 
-        {enCurso && (
-          <div className="flex flex-col gap-3 w-full max-w-2xl items-center">
+        <div className="flex flex-col gap-3 w-full max-w-2xl items-center">
+          {enCurso && (
             <div className="flex flex-wrap gap-4 w-full justify-center">
               {enPausa ? (
                 <button
@@ -219,18 +242,25 @@ export function OperarioClient({ userName, role }: { userName: string; role: str
                 <CheckCircle2 className="h-8 w-8" /> Finalizar
               </button>
             </div>
-            {/* Supervisor/admin: corregir los minutos de la última pausa cerrada. */}
-            {esSupervisor && !enPausa && actual?.ultimaPausaCerrada && (
-              <button
-                onClick={abrirEditarMinutos}
-                disabled={submitting}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-600 px-5 h-12 text-base font-medium text-slate-200 hover:bg-slate-800"
-              >
-                <Clock className="h-5 w-5" /> Editar minutos de pausa
-              </button>
-            )}
-          </div>
-        )}
+          )}
+          {/* Siempre visible: ver las OTs de hoy y mañana (solo lectura). */}
+          <button
+            onClick={abrirAgenda}
+            className="h-24 w-full rounded-2xl bg-[#1627b1] hover:bg-[#1e30d4] text-2xl font-bold text-white flex items-center justify-center gap-3 shadow-lg active:scale-95 transition"
+          >
+            <CalendarDays className="h-8 w-8" /> Órdenes de hoy y mañana
+          </button>
+          {/* Supervisor/admin: corregir los minutos de la última pausa cerrada. */}
+          {enCurso && esSupervisor && !enPausa && actual?.ultimaPausaCerrada && (
+            <button
+              onClick={abrirEditarMinutos}
+              disabled={submitting}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-600 px-5 h-12 text-base font-medium text-slate-200 hover:bg-slate-800"
+            >
+              <Clock className="h-5 w-5" /> Editar minutos de pausa
+            </button>
+          )}
+        </div>
       </main>
 
       {mostrandoPausa && (
@@ -278,6 +308,15 @@ export function OperarioClient({ userName, role }: { userName: string; role: str
           onCancel={() => setEditarMinutosOpen(false)}
           onConfirm={confirmarEditarMinutos}
           submitting={submitting}
+        />
+      )}
+
+      {agendaOpen && (
+        <AgendaDialog
+          agenda={agenda}
+          loading={agendaLoading}
+          actualId={actual?.id ?? null}
+          onClose={() => setAgendaOpen(false)}
         />
       )}
     </div>
@@ -661,5 +700,132 @@ function EditarMinutosDialog({
         </div>
       </div>
     </div>
+  );
+}
+
+/** Hora HH:MM en zona horaria de Argentina (independiente del reloj del móvil). */
+function horaCorta(iso: string) {
+  return new Date(iso).toLocaleTimeString("es-AR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "America/Argentina/Buenos_Aires",
+  });
+}
+
+/** Panel de solo lectura con las OTs de hoy y mañana, pensado para el móvil. */
+function AgendaDialog({
+  agenda,
+  loading,
+  actualId,
+  onClose,
+}: {
+  agenda: LineaAgenda | null;
+  loading: boolean;
+  actualId: string | null;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 bg-slate-900 text-white flex flex-col z-50">
+      <header className="flex items-center justify-between bg-slate-800 px-6 py-4 shrink-0">
+        <h2 className="text-2xl font-bold flex items-center gap-3">
+          <CalendarDays className="h-7 w-7" /> Órdenes de trabajo
+        </h2>
+        <button
+          onClick={onClose}
+          className="inline-flex h-14 items-center gap-2 rounded-xl border border-slate-600 px-5 text-lg font-medium hover:bg-slate-700 active:scale-95 transition"
+        >
+          <X className="h-6 w-6" /> Cerrar
+        </button>
+      </header>
+      <div className="flex-1 overflow-y-auto p-6 space-y-8">
+        {loading || !agenda ? (
+          <p className="text-2xl text-slate-400 text-center mt-12">Cargando…</p>
+        ) : (
+          <>
+            <AgendaSeccion titulo="Hoy" items={agenda.hoy} actualId={actualId} />
+            <AgendaSeccion titulo="Mañana" items={agenda.manana} actualId={actualId} />
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AgendaSeccion({
+  titulo,
+  items,
+  actualId,
+}: {
+  titulo: string;
+  items: LineaOrden[];
+  actualId: string | null;
+}) {
+  return (
+    <section>
+      <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 mb-3">
+        {titulo} · {items.length} {items.length === 1 ? "orden" : "órdenes"}
+      </h3>
+      {items.length === 0 ? (
+        <p className="text-lg text-slate-500">Sin órdenes programadas.</p>
+      ) : (
+        <ul className="space-y-3">
+          {items.map((it) => (
+            <AgendaItem key={it.id} item={it} esActual={it.id === actualId} />
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function AgendaItem({ item, esActual }: { item: LineaOrden; esActual: boolean }) {
+  return (
+    <li
+      className={
+        "rounded-2xl p-4 flex items-center gap-4 border " +
+        (esActual
+          ? "bg-emerald-950/60 border-emerald-500"
+          : "bg-slate-800 border-slate-700")
+      }
+    >
+      <div className="text-3xl font-black tabular-nums tracking-tight shrink-0 w-20">
+        {horaCorta(item.inicioProgramado)}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <TipoBadge tipo={item.tipo} />
+          <EstadoBadge estado={item.estado} />
+        </div>
+        <p className="text-2xl font-black truncate mt-1">{item.cliente.nombre}</p>
+        <p className="text-lg font-bold text-slate-300 truncate">{nombreOrden(item)}</p>
+        <p className="text-base text-slate-400">
+          {item.cantidad} piezas
+          {item.tipo === "PINTURA" && ` · ${item.color}`}
+        </p>
+      </div>
+    </li>
+  );
+}
+
+function EstadoBadge({ estado }: { estado: string }) {
+  const map: Record<string, string> = {
+    EN_CURSO: "bg-emerald-200 text-emerald-900",
+    PENDIENTE: "bg-amber-200 text-amber-900",
+    FINALIZADO: "bg-slate-300 text-slate-700",
+  };
+  const label: Record<string, string> = {
+    EN_CURSO: "En curso",
+    PENDIENTE: "Pendiente",
+    FINALIZADO: "Finalizada",
+  };
+  return (
+    <span
+      className={
+        "inline-flex items-center rounded-full font-bold uppercase tracking-wide text-xs px-2.5 py-1 " +
+        (map[estado] ?? "bg-slate-300 text-slate-700")
+      }
+    >
+      {label[estado] ?? estado}
+    </span>
   );
 }

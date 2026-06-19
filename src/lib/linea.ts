@@ -37,6 +37,15 @@ export interface LineaOrden {
   ultimaPausaCerrada: { id: string; durSeg: number } | null;
 }
 
+export interface LineaAgenda {
+  /// ISO del server al momento del request (para mostrar fechas coherentes).
+  serverNow: string;
+  /// OTs cuyo inicio programado cae en el día de hoy (orden cronológico).
+  hoy: LineaOrden[];
+  /// OTs cuyo inicio programado cae en el día siguiente (orden cronológico).
+  manana: LineaOrden[];
+}
+
 export interface LineaSnapshot {
   /// ISO del server al momento del request — el cliente lo usa para ajustar
   /// drift de reloj al calcular el timer.
@@ -177,4 +186,38 @@ export async function resolverLineaSnapshot(): Promise<LineaSnapshot> {
     ordenAnterior,
     ordenesSiguientes,
   };
+}
+
+/**
+ * Agenda del operario: las OTs (no canceladas) cuyo `inicioProgramado` cae hoy o
+ * mañana, separadas por día. Es solo-lectura: sirve para que el operario vea qué
+ * viene en la jornada y la siguiente. Los límites de día se calculan en la zona
+ * horaria del proceso (el contenedor corre con TZ=America/Argentina/Buenos_Aires).
+ */
+export async function resolverAgendaDia(): Promise<LineaAgenda> {
+  const ahora = new Date();
+  const inicioHoy = new Date(ahora);
+  inicioHoy.setHours(0, 0, 0, 0);
+  const inicioManana = new Date(inicioHoy);
+  inicioManana.setDate(inicioManana.getDate() + 1);
+  const finManana = new Date(inicioHoy);
+  finManana.setDate(finManana.getDate() + 2);
+
+  const rows = await prisma.ordenTrabajo.findMany({
+    where: {
+      estado: { not: "CANCELADO" },
+      inicioProgramado: { gte: inicioHoy, lt: finManana },
+    },
+    orderBy: { inicioProgramado: "asc" },
+    include: includeFull,
+  });
+
+  const hoy: LineaOrden[] = [];
+  const manana: LineaOrden[] = [];
+  for (const r of rows) {
+    if (r.inicioProgramado.getTime() < inicioManana.getTime()) hoy.push(shapeOrden(r));
+    else manana.push(shapeOrden(r));
+  }
+
+  return { serverNow: ahora.toISOString(), hoy, manana };
 }
