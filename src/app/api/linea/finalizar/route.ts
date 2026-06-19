@@ -17,6 +17,11 @@
  *  - Si `cantidadCompletada < cantidad`, la OT se cierra con esa cantidad y el
  *    remanente se agenda como una OT continuación AL FINAL de la cola (fin de la
  *    última OT activa + gap 15min / +30 por cambio de color).
+ *  - Tras finalizar, las OTs PENDIENTE se RE-ENCADENAN automáticamente desde el
+ *    fin REAL de esta OT (gap 15 min / +45 si cambia color, respetando las
+ *    ventanas de jornada). Así, si una OT se atrasa o adelanta, la cola se ajusta
+ *    sola: la siguiente arranca 15/45 min después del fin real y no queda marcada
+ *    como atrasada en el Gantt.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -29,8 +34,11 @@ import {
   ceilAMinuto,
   requiereJustificacion,
   desvioRelativo,
+  reencadenarEnJornada,
   type ItemCalculable,
+  type ItemReencadenable,
 } from "@/lib/schedule";
+import { obtenerTurnos, turnoQueContiene, proximoTurnoDesde } from "@/lib/turnos";
 
 const Body = z.object({
   cantidadCompletada: z.number().int().positive().optional(),
@@ -104,6 +112,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Turnos para el reencadenado consciente de jornada (lectura fuera de la tx).
+  const turnos = await obtenerTurnos();
+
   const resultado = await prisma.$transaction(async (tx) => {
     // Cerrar pausas abiertas.
     for (const p of orden.pausas) {
@@ -143,51 +154,94 @@ export async function POST(req: NextRequest) {
       usuario: { id: auth.claims.sub, name: auth.claims.name },
     });
 
-    if (!esSplit) return { continuacion: null };
+    let continuacion: { id: string; numero: number } | null = null;
 
-    // Continuación con el remanente, al FINAL de la cola.
-    const restoCantidad = orden.cantidad - cantidadFinal;
-    const durResto = calc(restoCantidad);
+    if (esSplit) {
+      // Continuación con el remanente, al FINAL de la cola.
+      const restoCantidad = orden.cantidad - cantidadFinal;
+      const durResto = calc(restoCantidad);
 
-    const ultima = await tx.ordenTrabajo.findFirst({
-      where: { estado: { in: ["PENDIENTE", "EN_CURSO"] }, id: { not: orden.id } },
-      orderBy: { finTeorico: "desc" },
-      select: { finTeorico: true, tipo: true, color: true },
+      const ultima = await tx.ordenTrabajo.findFirst({
+        where: { estado: { in: ["PENDIENTE", "EN_CURSO"] }, id: { not: orden.id } },
+        orderBy: { finTeorico: "desc" },
+        select: { finTeorico: true, tipo: true, color: true },
+      });
+      const baseFinMs = ultima ? ultima.finTeorico.getTime() : now.getTime();
+      const prevGap = ultima
+        ? { tipo: ultima.tipo, color: ultima.color }
+        : { tipo: orden.tipo, color: orden.color };
+      const gapSeg = tiempoCambioSeg(prevGap, { tipo: orden.tipo, color: orden.color });
+      const inicioCont = ceilAMinuto(new Date(baseFinMs + gapSeg * 1000));
+      const finCont = new Date(inicioCont.getTime() + durResto * 1000);
+
+      continuacion = await tx.ordenTrabajo.create({
+        data: {
+          articuloId: orden.articuloId,
+          tipo: orden.tipo,
+          color: orden.color,
+          cantidad: restoCantidad,
+          piezasPorPercha: orden.piezasPorPercha,
+          velocidadLavado: orden.velocidadLavado,
+          configPerchas: orden.configPerchas,
+          inicioProgramado: inicioCont,
+          inicioTeorico: inicioCont,
+          finTeorico: finCont,
+          creadoPorId: auth.claims.sub,
+          ordenPadreId: orden.id,
+        },
+        select: { id: true, numero: true },
+      });
+
+      await registrarAuditoria(tx, {
+        tipo: "SPLIT",
+        entidad: "OT",
+        entidadId: continuacion.id,
+        resumen: `Remanente de la OT #${orden.numero} → continuación #${continuacion.numero} (${restoCantidad} pzs) al final de la cola`,
+        detalle: { ordenPadre: orden.numero, restoCantidad, inicioProgramado: inicioCont.toISOString() },
+        usuario: { id: auth.claims.sub, name: auth.claims.name },
+      });
+    }
+
+    // Re-encadenar AUTOMÁTICAMENTE las OTs PENDIENTE desde el fin real de esta
+    // OT. La cola se ajusta al atraso/adelanto real: la siguiente arranca
+    // 15 min (o 45 si cambia color) después del fin real, respetando las
+    // ventanas de jornada (si no entra antes del cierre, salta a la próxima).
+    // Incluye la continuación recién creada (queda al final por su inicio).
+    const pendientes = await tx.ordenTrabajo.findMany({
+      where: { estado: "PENDIENTE" },
+      orderBy: { inicioProgramado: "asc" },
+      select: { id: true, tipo: true, color: true, inicioTeorico: true, finTeorico: true },
     });
-    const baseFinMs = ultima ? ultima.finTeorico.getTime() : now.getTime();
-    const prevGap = ultima
-      ? { tipo: ultima.tipo, color: ultima.color }
-      : { tipo: orden.tipo, color: orden.color };
-    const gapSeg = tiempoCambioSeg(prevGap, { tipo: orden.tipo, color: orden.color });
-    const inicioCont = ceilAMinuto(new Date(baseFinMs + gapSeg * 1000));
-    const finCont = new Date(inicioCont.getTime() + durResto * 1000);
 
-    const continuacion = await tx.ordenTrabajo.create({
-      data: {
-        articuloId: orden.articuloId,
-        tipo: orden.tipo,
-        color: orden.color,
-        cantidad: restoCantidad,
-        piezasPorPercha: orden.piezasPorPercha,
-        velocidadLavado: orden.velocidadLavado,
-        configPerchas: orden.configPerchas,
-        inicioProgramado: inicioCont,
-        inicioTeorico: inicioCont,
-        finTeorico: finCont,
-        creadoPorId: auth.claims.sub,
-        ordenPadreId: orden.id,
-      },
-      select: { id: true, numero: true },
-    });
+    if (pendientes.length > 0) {
+      // Gap entre la OT recién finalizada y la primera pendiente (puede ser +45
+      // si cambia color). Se baja al ancla porque reencadenarEnJornada no aplica
+      // gap antes del primer ítem.
+      const primeraGapSeg = tiempoCambioSeg(
+        { tipo: orden.tipo, color: orden.color },
+        { tipo: pendientes[0].tipo, color: pendientes[0].color },
+      );
+      const ancla = ceilAMinuto(new Date(now.getTime() + primeraGapSeg * 1000));
 
-    await registrarAuditoria(tx, {
-      tipo: "SPLIT",
-      entidad: "OT",
-      entidadId: continuacion.id,
-      resumen: `Remanente de la OT #${orden.numero} → continuación #${continuacion.numero} (${restoCantidad} pzs) al final de la cola`,
-      detalle: { ordenPadre: orden.numero, restoCantidad, inicioProgramado: inicioCont.toISOString() },
-      usuario: { id: auth.claims.sub, name: auth.claims.name },
-    });
+      const items: ItemReencadenable[] = pendientes.map((p) => ({
+        tipo: p.tipo,
+        color: p.color,
+        duracionSeg: Math.round((p.finTeorico.getTime() - p.inicioTeorico.getTime()) / 1000),
+      }));
+
+      const plan = reencadenarEnJornada(items, ancla, {
+        ventanaDe: (t) => turnoQueContiene(turnos, t),
+        proximoInicio: (desde) => proximoTurnoDesde(turnos, desde),
+      });
+
+      for (let i = 0; i < pendientes.length; i++) {
+        const { inicio, fin } = plan[i];
+        await tx.ordenTrabajo.update({
+          where: { id: pendientes[i].id },
+          data: { inicioProgramado: inicio, inicioTeorico: inicio, finTeorico: fin },
+        });
+      }
+    }
 
     return { continuacion };
   });
