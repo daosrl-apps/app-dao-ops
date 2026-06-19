@@ -15,7 +15,7 @@
  * de duraciones no exceda 24 h.
  *
  * GET es accesible por todos los roles autenticados (la app necesita conocer
- * los turnos para validar OTs); PUT solo ADMIN.
+ * los turnos para validar OTs); PUT lo pueden hacer ADMIN y SUPERVISOR.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -48,7 +48,7 @@ export async function GET() {
 }
 
 export async function PUT(req: NextRequest) {
-  const auth = await requireSessionApi(["ADMIN"]);
+  const auth = await requireSessionApi(["ADMIN", "SUPERVISOR"]);
   if ("response" in auth) return auth.response;
 
   const parsed = Body.safeParse(await req.json().catch(() => null));

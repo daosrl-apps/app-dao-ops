@@ -69,7 +69,7 @@ const TARJETAS: Tarjeta[] = [
     titulo: "Turnos",
     desc: "Configurar horarios de los turnos de la planta.",
     icon: Clock,
-    roles: ["ADMIN"],
+    roles: ["ADMIN", "SUPERVISOR"],
   },
   {
     href: "/dashboard/usuarios",

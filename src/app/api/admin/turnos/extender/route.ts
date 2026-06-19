@@ -20,7 +20,7 @@ const Body = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const auth = await requireSessionApi(["ADMIN"]);
+  const auth = await requireSessionApi(["ADMIN", "SUPERVISOR"]);
   if ("response" in auth) return auth.response;
 
   const parsed = Body.safeParse(await req.json().catch(() => null));
@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE() {
-  const auth = await requireSessionApi(["ADMIN"]);
+  const auth = await requireSessionApi(["ADMIN", "SUPERVISOR"]);
   if ("response" in auth) return auth.response;
 
   await revertirExtension();

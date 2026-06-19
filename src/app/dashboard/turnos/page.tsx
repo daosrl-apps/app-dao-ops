@@ -5,7 +5,7 @@ import { TurnosClient, type TurnoView } from "./turnos-client";
 export const dynamic = "force-dynamic";
 
 export default async function TurnosPage() {
-  await requireSession(["ADMIN"]);
+  await requireSession(["ADMIN", "SUPERVISOR"]);
 
   const turnos = await obtenerTurnosTodos();
   const cfg = await obtenerConfiguracionPlanta();
