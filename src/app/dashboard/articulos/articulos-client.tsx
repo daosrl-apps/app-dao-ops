@@ -10,11 +10,20 @@ interface Articulo {
   codigo: string;
   descripcion: string | null;
   superficieM2: number | null;
+  perchas: number | null;
+  tiempoVueltaMin: number | null;
+  piezasPorVuelta: number | null;
+  velLineaMtsMin: number | null;
   piezasPorHora: number;
   color: string;
   colorRevisar: boolean;
   configPerchas: string | null;
   cliente: { id: string; nombre: string };
+}
+
+/** Formatea un número opcional para la tabla (— si es null). */
+function num(v: number | null | undefined, maxFrac = 3) {
+  return v != null ? v.toLocaleString("es-AR", { maximumFractionDigits: maxFrac }) : "—";
 }
 
 export function ArticulosClient() {
@@ -101,13 +110,18 @@ function ListaArticulos() {
         ) : items.length === 0 ? (
           <p className="p-6 text-slate-500">No hay artículos.</p>
         ) : (
-          <table className="w-full text-left">
+          <table className="w-full text-left whitespace-nowrap">
             <thead className="bg-slate-100 text-xs uppercase text-slate-600">
               <tr>
                 <th className="px-3 py-2">Cliente</th>
                 <th className="px-3 py-2">Código</th>
                 <th className="px-3 py-2">Descripción</th>
+                <th className="px-3 py-2">Color</th>
                 <th className="px-3 py-2 text-right">Superficie (m²)</th>
+                <th className="px-3 py-2 text-right">Perchas</th>
+                <th className="px-3 py-2 text-right">T. vuelta (min)</th>
+                <th className="px-3 py-2 text-right">Pzs/vuelta</th>
+                <th className="px-3 py-2 text-right">Vel. línea (m/min)</th>
                 <th className="px-3 py-2 text-right">Pzs/h</th>
               </tr>
             </thead>
@@ -119,14 +133,19 @@ function ListaArticulos() {
                   <td className="px-3 py-2 text-slate-600 max-w-xs truncate">
                     {a.descripcion ?? "—"}
                   </td>
-                  <td className="px-3 py-2 text-right text-slate-700">
-                    {a.superficieM2 != null
-                      ? a.superficieM2.toLocaleString("es-AR", { maximumFractionDigits: 3 })
-                      : "—"}
+                  <td className="px-3 py-2 text-slate-700">
+                    {a.colorRevisar ? (
+                      <span className="text-amber-700 font-medium">{a.color}</span>
+                    ) : (
+                      a.color
+                    )}
                   </td>
-                  <td className="px-3 py-2 text-right text-slate-700">
-                    {a.piezasPorHora.toLocaleString("es-AR", { maximumFractionDigits: 1 })}
-                  </td>
+                  <td className="px-3 py-2 text-right text-slate-700">{num(a.superficieM2)}</td>
+                  <td className="px-3 py-2 text-right text-slate-700">{num(a.perchas)}</td>
+                  <td className="px-3 py-2 text-right text-slate-700">{num(a.tiempoVueltaMin)}</td>
+                  <td className="px-3 py-2 text-right text-slate-700">{num(a.piezasPorVuelta)}</td>
+                  <td className="px-3 py-2 text-right text-slate-700">{num(a.velLineaMtsMin)}</td>
+                  <td className="px-3 py-2 text-right text-slate-700">{num(a.piezasPorHora, 1)}</td>
                 </tr>
               ))}
             </tbody>
