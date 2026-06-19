@@ -1,9 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { Upload, AlertTriangle, Search } from "lucide-react";
+import { Upload, AlertTriangle, Search, Pencil, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { CATALOGO_COLORES, SIN_COLOR } from "@/lib/color-parser";
 
 interface Articulo {
   id: string;
@@ -74,6 +75,8 @@ function ListaArticulos() {
   const [items, setItems] = React.useState<Articulo[]>([]);
   const [q, setQ] = React.useState("");
   const [loading, setLoading] = React.useState(true);
+  const [editMode, setEditMode] = React.useState(false);
+  const [editing, setEditing] = React.useState<Articulo | null>(null);
 
   const reload = React.useCallback(async () => {
     setLoading(true);
@@ -102,7 +105,21 @@ function ListaArticulos() {
             className="pl-10"
           />
         </div>
+        <Button
+          variant={editMode ? "default" : "outline"}
+          onClick={() => setEditMode((v) => !v)}
+          className={editMode ? "bg-[#1627b1] text-white" : ""}
+        >
+          <Pencil className="h-4 w-4 mr-2" />
+          {editMode ? "Salir de edición" : "Editar"}
+        </Button>
       </div>
+      {editMode && (
+        <p className="mb-3 text-sm text-amber-700">
+          Modo edición: buscá el artículo y tocá <b>Editar</b> en su fila. No se
+          pueden cambiar cliente ni código.
+        </p>
+      )}
 
       <div className="rounded-2xl bg-white shadow-sm border border-slate-200 overflow-x-auto">
         {loading ? (
@@ -123,6 +140,7 @@ function ListaArticulos() {
                 <th className="px-3 py-2 text-right">Pzs/vuelta</th>
                 <th className="px-3 py-2 text-right">Vel. línea (m/min)</th>
                 <th className="px-3 py-2 text-right">Pzs/h</th>
+                {editMode && <th className="px-3 py-2 text-right">Acción</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -146,14 +164,200 @@ function ListaArticulos() {
                   <td className="px-3 py-2 text-right text-slate-700">{num(a.piezasPorVuelta)}</td>
                   <td className="px-3 py-2 text-right text-slate-700">{num(a.velLineaMtsMin)}</td>
                   <td className="px-3 py-2 text-right text-slate-700">{num(a.piezasPorHora, 1)}</td>
+                  {editMode && (
+                    <td className="px-3 py-2 text-right">
+                      <Button
+                        variant="outline"
+                        onClick={() => setEditing(a)}
+                        className="h-8 px-3 text-sm"
+                      >
+                        <Pencil className="h-3.5 w-3.5 mr-1" /> Editar
+                      </Button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
           </table>
         )}
       </div>
+
+      {editing && (
+        <EditarArticuloModal
+          articulo={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            reload();
+          }}
+        />
+      )}
     </>
   );
+}
+
+// =============================================================================
+// Modal de edición de un artículo
+// =============================================================================
+
+function EditarArticuloModal({
+  articulo,
+  onClose,
+  onSaved,
+}: {
+  articulo: Articulo;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [descripcion, setDescripcion] = React.useState(articulo.descripcion ?? "");
+  const [color, setColor] = React.useState(articulo.color);
+  const [superficieM2, setSuperficieM2] = React.useState(str(articulo.superficieM2));
+  const [perchas, setPerchas] = React.useState(str(articulo.perchas));
+  const [tiempoVueltaMin, setTiempoVueltaMin] = React.useState(str(articulo.tiempoVueltaMin));
+  const [piezasPorVuelta, setPiezasPorVuelta] = React.useState(str(articulo.piezasPorVuelta));
+  const [velLineaMtsMin, setVelLineaMtsMin] = React.useState(str(articulo.velLineaMtsMin));
+  const [piezasPorHora, setPiezasPorHora] = React.useState(str(articulo.piezasPorHora));
+  const [submitting, setSubmitting] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  // Lista de colores: el catálogo + el actual si no estuviera (defensivo).
+  const colores = React.useMemo(() => {
+    const base = [...CATALOGO_COLORES, SIN_COLOR];
+    return base.includes(articulo.color) ? base : [articulo.color, ...base];
+  }, [articulo.color]);
+
+  const guardar = async () => {
+    const pph = Number(piezasPorHora);
+    if (!Number.isFinite(pph) || pph <= 0) {
+      setError("Piezas x hora debe ser un número mayor a 0.");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    const res = await fetch(`/api/admin/articulos/${articulo.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        descripcion: descripcion.trim() || null,
+        color,
+        superficieM2: numOrNull(superficieM2),
+        perchas: numOrNull(perchas),
+        tiempoVueltaMin: numOrNull(tiempoVueltaMin),
+        piezasPorVuelta: numOrNull(piezasPorVuelta),
+        velLineaMtsMin: numOrNull(velLineaMtsMin),
+        piezasPorHora: pph,
+      }),
+    });
+    setSubmitting(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      setError(data?.error ? String(data.error) : "No se pudo guardar.");
+      return;
+    }
+    onSaved();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <h2 className="text-xl font-bold text-slate-800">Editar artículo</h2>
+            <p className="text-sm text-slate-500">
+              {articulo.cliente.nombre} · <span className="font-medium">{articulo.codigo}</span>
+            </p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700">
+            <X className="h-6 w-6" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <Campo label="Cliente">
+            <Input value={articulo.cliente.nombre} disabled />
+          </Campo>
+          <Campo label="Código">
+            <Input value={articulo.codigo} disabled />
+          </Campo>
+          <Campo label="Descripción" full>
+            <Input value={descripcion} onChange={(e) => setDescripcion(e.target.value)} />
+          </Campo>
+          <Campo label="Color">
+            <select
+              value={color}
+              onChange={(e) => setColor(e.target.value)}
+              className="h-10 w-full rounded-lg border border-slate-300 px-3 text-sm"
+            >
+              {colores.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </Campo>
+          <Campo label="Superficie (m²)">
+            <Input type="number" step="any" value={superficieM2} onChange={(e) => setSuperficieM2(e.target.value)} />
+          </Campo>
+          <Campo label="Perchas">
+            <Input type="number" step="any" value={perchas} onChange={(e) => setPerchas(e.target.value)} />
+          </Campo>
+          <Campo label="Tiempo x vuelta (min)">
+            <Input type="number" step="any" value={tiempoVueltaMin} onChange={(e) => setTiempoVueltaMin(e.target.value)} />
+          </Campo>
+          <Campo label="Piezas x vuelta">
+            <Input type="number" step="any" value={piezasPorVuelta} onChange={(e) => setPiezasPorVuelta(e.target.value)} />
+          </Campo>
+          <Campo label="Vel. línea (m/min)">
+            <Input type="number" step="any" value={velLineaMtsMin} onChange={(e) => setVelLineaMtsMin(e.target.value)} />
+          </Campo>
+          <Campo label="Piezas x hora">
+            <Input type="number" step="any" value={piezasPorHora} onChange={(e) => setPiezasPorHora(e.target.value)} />
+          </Campo>
+        </div>
+
+        {error && <p className="mt-4 text-red-600 text-sm font-medium">{error}</p>}
+
+        <div className="mt-6 flex justify-end gap-3">
+          <Button variant="outline" onClick={onClose} disabled={submitting}>
+            Cancelar
+          </Button>
+          <Button onClick={guardar} disabled={submitting} className="bg-emerald-600 text-white">
+            {submitting ? "Guardando…" : "Guardar cambios"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Campo({
+  label,
+  children,
+  full,
+}: {
+  label: string;
+  children: React.ReactNode;
+  full?: boolean;
+}) {
+  return (
+    <div className={full ? "col-span-2" : ""}>
+      <label className="block text-xs font-medium text-slate-600 mb-1">{label}</label>
+      {children}
+    </div>
+  );
+}
+
+/** Number → string para inputs ("" si null). */
+function str(v: number | null | undefined) {
+  return v != null ? String(v) : "";
+}
+
+/** String de input → number o null (si vacío). */
+function numOrNull(v: string): number | null {
+  const t = v.trim();
+  if (t === "") return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
 }
 
 // =============================================================================
