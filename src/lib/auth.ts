@@ -15,6 +15,7 @@
 import { cookies } from "next/headers";
 import { SignJWT, jwtVerify, type JWTPayload } from "jose";
 import { env } from "@/lib/env";
+import { prisma } from "@/lib/db";
 
 const SECRET = new TextEncoder().encode(env.AUTH_SECRET);
 const ALG = "HS256";
@@ -58,6 +59,36 @@ export async function getCurrentSessionClaims(): Promise<SessionClaims | null> {
   const token = cookieStore.get(SESSION_COOKIE)?.value;
   if (!token) return null;
   return verifySessionToken(token);
+}
+
+/**
+ * Versión estricta: además de verificar el JWT, confirma contra la DB que la
+ * Session sigue viva (no se hizo logout, no venció) y que el usuario sigue
+ * activo. Refresca `role` y `name` desde la DB, así un cambio de rol o una baja
+ * surten efecto inmediato sin esperar a que venza el JWT (que puede durar 12h).
+ *
+ * Esto es lo que hace que el logout / la baja / el cambio de rol "corten" de
+ * verdad: el middleware solo mira el JWT (Edge no puede pegarle a Prisma), pero
+ * las rutas API y los Server Components pasan por acá.
+ */
+export async function getCurrentSessionStrict(): Promise<SessionClaims | null> {
+  const claims = await getCurrentSessionClaims();
+  if (!claims) return null;
+
+  const session = await prisma.session.findUnique({
+    where: { id: claims.sid },
+    select: {
+      expiresAt: true,
+      user: { select: { role: true, name: true, isActive: true, deletedAt: true } },
+    },
+  });
+
+  if (!session) return null; // revocada (logout / baja).
+  if (session.expiresAt <= new Date()) return null; // vencida en DB.
+  if (!session.user.isActive || session.user.deletedAt) return null; // usuario dado de baja.
+
+  // Refrescamos rol/nombre por si cambiaron desde que se emitió el JWT.
+  return { ...claims, role: session.user.role, name: session.user.name };
 }
 
 export function sessionCookieOptions(maxAgeSeconds: number = env.SESSION_TTL_SECONDS) {
