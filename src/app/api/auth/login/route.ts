@@ -16,14 +16,26 @@ import { env } from "@/lib/env";
 import { comparePin, isValidPinFormat } from "@/lib/pin";
 import { signSessionToken, sessionCookieOptions, SESSION_COOKIE } from "@/lib/auth";
 import { registrarAuditoria } from "@/lib/auditoria";
+import { getClientIp } from "@/lib/net";
+import { checkLoginRateLimit } from "@/lib/rate-limit";
 
 const GENERIC_ERROR = { error: "PIN incorrecto" };
 
 export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => null)) as { pin?: unknown } | null;
   const pin = typeof body?.pin === "string" ? body.pin : "";
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
+  const ip = getClientIp(req.headers);
   const userAgent = req.headers.get("user-agent") || null;
+
+  // Rate-limit por IP ANTES de tocar bcrypt: cada intento corre el hash contra
+  // todos los usuarios activos, así que es el cuello de botella a proteger.
+  const rl = await checkLoginRateLimit(prisma, ip);
+  if (rl.limited) {
+    return NextResponse.json(
+      { error: "Demasiados intentos. Probá de nuevo en unos minutos." },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } },
+    );
+  }
 
   if (!isValidPinFormat(pin)) {
     return NextResponse.json(GENERIC_ERROR, { status: 401 });

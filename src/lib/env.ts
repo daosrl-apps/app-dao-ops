@@ -17,6 +17,10 @@ const schema = z.object({
     .string()
     .min(32, "AUTH_SECRET debe tener al menos 32 caracteres (usar `openssl rand -base64 32`)"),
   SESSION_TTL_SECONDS: z.coerce.number().int().positive().default(43200),
+  // Token de acceso a las pantallas de TV (`/tv`, `/api/tv/*`). Opcional para
+  // que el build no rompa, pero si falta el middleware deniega el acceso a TV
+  // (fail-closed). Generar con `openssl rand -hex 24`.
+  TV_TOKEN: z.string().min(16).optional(),
 });
 
 const parsed = schema.safeParse(process.env);

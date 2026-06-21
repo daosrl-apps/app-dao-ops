@@ -15,6 +15,8 @@ import { comparePassword } from "@/lib/password";
 import { signSessionToken, sessionCookieOptions, SESSION_COOKIE } from "@/lib/auth";
 import { MAX_FAILED_ATTEMPTS, LOCKOUT_DURATION_MS } from "@/lib/pin";
 import { registrarAuditoria } from "@/lib/auditoria";
+import { getClientIp } from "@/lib/net";
+import { checkLoginRateLimit } from "@/lib/rate-limit";
 
 const GENERIC_ERROR = { error: "Usuario o contraseña incorrectos" };
 
@@ -24,8 +26,16 @@ export async function POST(req: NextRequest) {
     | null;
   const username = typeof body?.username === "string" ? body.username.trim() : "";
   const password = typeof body?.password === "string" ? body.password : "";
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
+  const ip = getClientIp(req.headers);
   const userAgent = req.headers.get("user-agent") || null;
+
+  const rl = await checkLoginRateLimit(prisma, ip);
+  if (rl.limited) {
+    return NextResponse.json(
+      { error: "Demasiados intentos. Probá de nuevo en unos minutos." },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } },
+    );
+  }
 
   if (!username || !password) {
     return NextResponse.json(GENERIC_ERROR, { status: 401 });

@@ -8,6 +8,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireSessionApi } from "@/lib/auth-guards";
 import { hashPin, isValidPinFormat } from "@/lib/pin";
+import { pinYaEnUso } from "@/lib/pin-uniqueness";
 import { hashPassword, isValidPasswordFormat, isValidUsername } from "@/lib/password";
 import { registrarAuditoria } from "@/lib/auditoria";
 
@@ -76,6 +77,13 @@ export async function POST(req: NextRequest) {
     if (dup) {
       return NextResponse.json({ error: "Ese usuario ya existe" }, { status: 409 });
     }
+  }
+
+  if (role === "OPERARIO" && pin && (await pinYaEnUso(pin))) {
+    return NextResponse.json(
+      { error: "Ese PIN ya está en uso por otro usuario" },
+      { status: 409 },
+    );
   }
 
   const data: {
