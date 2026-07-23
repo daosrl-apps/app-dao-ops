@@ -17,9 +17,19 @@ import { prisma } from "@/lib/db";
 
 export async function GET() {
   const ahora = new Date();
+  // Ventana de relevancia para la TV: SIEMPRE las EN_CURSO, y las PENDIENTE que
+  // terminan de ahora en adelante (con un pequeño colchón hacia atrás). Sin esto,
+  // orderBy asc + take traía las 100 pendientes MÁS VIEJAS, sesgando la TV hacia
+  // órdenes atascadas del pasado en vez de las próximas.
+  const desde = new Date(ahora.getTime() - 24 * 60 * 60 * 1000);
 
   const rows = await prisma.ordenTrabajo.findMany({
-    where: { estado: { in: ["PENDIENTE", "EN_CURSO"] } },
+    where: {
+      OR: [
+        { estado: "EN_CURSO" },
+        { estado: "PENDIENTE", finTeorico: { gte: desde } },
+      ],
+    },
     orderBy: { inicioTeorico: "asc" },
     take: 100,
     include: {
