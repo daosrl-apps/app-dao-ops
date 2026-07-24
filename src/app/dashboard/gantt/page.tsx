@@ -7,9 +7,24 @@ export const dynamic = "force-dynamic";
 export default async function GanttPage() {
   await requireSession(["SUPERVISOR", "ADMIN", "OPERARIO"]);
 
+  // Ventana de relevancia: SIEMPRE las activas (PENDIENTE/EN_CURSO) más las
+  // finalizadas de los últimos 14 días. Sin este filtro, `take` + orderBy asc
+  // devolvía las 200 OTs MÁS VIEJAS: las FINALIZADO se acumulan indefinidamente
+  // (conservan su inicioTeorico original), copan los cupos y expulsan a las
+  // órdenes actuales, dejando el Gantt "clavado" en fechas viejas.
+  const ahora = new Date();
+  const desde = new Date(ahora.getTime() - 14 * 24 * 60 * 60 * 1000);
+
   const ordenes = await prisma.ordenTrabajo.findMany({
-    take: 200,
-    where: { estado: { not: "CANCELADO" } },
+    take: 500,
+    where: {
+      estado: { not: "CANCELADO" },
+      OR: [
+        { estado: { in: ["PENDIENTE", "EN_CURSO"] } },
+        { finReal: { gte: desde } },
+        { finTeorico: { gte: desde } },
+      ],
+    },
     orderBy: { inicioTeorico: "asc" },
     include: {
       articulo: { select: { codigo: true, descripcion: true } },
