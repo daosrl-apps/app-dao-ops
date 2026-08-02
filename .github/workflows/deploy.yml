@@ -90,6 +90,8 @@ jobs:
             ls -la /opt/docker || echo "No se pudo leer /opt/docker"
             echo "--> Carpetas en /opt/docker/dao-ops:"
             ls -la /opt/docker/dao-ops || echo "No se pudo leer /opt/docker/dao-ops"
+            echo "--> Buscando backups en /home y /root:"
+            find /home /root -name "*.dump" -o -name "*.sql" -o -name "*backup*" 2>/dev/null || echo "find falló"
             echo "=== FIN DIAGNOSTICO ==="
 
             echo "==> Iniciar base de datos"
