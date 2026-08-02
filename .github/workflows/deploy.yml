@@ -81,16 +81,38 @@ jobs:
             echo "==> Build docker images"
             docker compose -f compose.yaml -f compose.prod.yaml build
 
+            echo "==> Iniciar base de datos"
+            docker compose -f compose.yaml -f compose.prod.yaml up -d db
+            echo "    Esperando a que la base de datos esté lista..."
+            for i in 1 2 3 4 5; do
+              if docker compose -f compose.yaml -f compose.prod.yaml exec -T db pg_isready -U daoops >/dev/null 2>&1; then
+                break
+              fi
+              sleep 2
+            done
+
+            # Restaurar base de datos histórica si existe un backup
+            BACKUP_FILE=$(ls -t /opt/docker/dao-ops/backups/daoops-*.dump 2>/dev/null | head -n 1)
+            if [ -n "$BACKUP_FILE" ]; then
+              echo "==> Restaurando backup histórico: $BACKUP_FILE"
+              docker compose -f compose.yaml -f compose.prod.yaml exec -T db pg_restore -U daoops -d daoops --clean --if-exists < "$BACKUP_FILE"
+              echo "    ¡Base de datos restaurada exitosamente!"
+            else
+              echo "==> Advertencia: No se encontró backup en /opt/docker/dao-ops/backups/. Se usará base limpia."
+            fi
+
             echo "==> Apply database migrations"
             docker compose -f compose.yaml -f compose.prod.yaml run --rm -T web \
               npx prisma migrate deploy < /dev/null
 
-            echo "==> Seed database"
-            docker compose -f compose.yaml -f compose.prod.yaml run --rm -T web \
-              npx tsx prisma/seed.ts < /dev/null || echo "    warn: seed falló, continuando"
+            # Solo correr el seed si NO se restauró un backup
+            if [ -z "$BACKUP_FILE" ]; then
+              echo "==> Seed database (base limpia)"
+              docker compose -f compose.yaml -f compose.prod.yaml run --rm -T web \
+                npx tsx prisma/seed.ts < /dev/null || echo "    warn: seed falló, continuando"
+            fi
 
             echo "==> Bring services up (force-recreate web para rotar la imagen)"
-            docker compose -f compose.yaml -f compose.prod.yaml up -d db
             docker compose -f compose.yaml -f compose.prod.yaml up -d --force-recreate web
 
             echo "==> Esperar healthcheck"
