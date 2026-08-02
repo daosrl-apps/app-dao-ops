@@ -37,10 +37,10 @@ jobs:
             # Si el directorio no tiene git, clonar
             if [ ! -d ".git" ]; then
               echo "Clonando repositorio por primera vez..."
-              git clone https://lvdandrea:Mesera1979@github.com/daosrl-apps/app-dao-ops.git .
+              git clone https://github.com/daosrl-apps/app-dao-ops.git .
             else
               echo "Actualizando repositorio..."
-              git remote set-url origin https://lvdandrea:Mesera1979@github.com/daosrl-apps/app-dao-ops.git
+              git remote set-url origin https://github.com/daosrl-apps/app-dao-ops.git
               git fetch --all
               git reset --hard origin/master
             fi
