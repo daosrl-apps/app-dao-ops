@@ -95,7 +95,7 @@ export function sessionCookieOptions(maxAgeSeconds: number = env.SESSION_TTL_SEC
   return {
     httpOnly: true,
     sameSite: "lax" as const,
-    secure: env.NODE_ENV === "production",
+    secure: false,
     path: "/",
     maxAge: maxAgeSeconds,
   };
