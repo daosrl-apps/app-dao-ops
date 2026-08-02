@@ -61,7 +61,7 @@ jobs:
               echo "SESSION_TTL_SECONDS=43200" >> .env
               echo "TV_TOKEN=$TV_TOK" >> .env
               echo "ADMIN_NAME=Admin" >> .env
-              echo "ADMIN_USERNAME=admin" >> .env
+              echo "ADMIN_USERNAME=Admin" >> .env
               echo "ADMIN_PASSWORD=admin1234" >> .env
               echo "Archivo .env creado con credenciales autogeneradas de manera segura."
             fi
@@ -69,8 +69,13 @@ jobs:
             # Si el archivo .env ya existe pero no tiene el username/password configurado
             if [ -f ".env" ] && ! grep -q "ADMIN_USERNAME" .env; then
               echo "Agregando credenciales de supervisor al archivo .env existente..."
-              echo "ADMIN_USERNAME=admin" >> .env
+              echo "ADMIN_USERNAME=Admin" >> .env
               echo "ADMIN_PASSWORD=admin1234" >> .env
+            fi
+
+            # Normalizar username a Admin con mayúscula si existía en minúsculas
+            if [ -f ".env" ]; then
+              sed -i 's/ADMIN_USERNAME=admin/ADMIN_USERNAME=Admin/g' .env
             fi
 
             echo "==> Build docker images"
