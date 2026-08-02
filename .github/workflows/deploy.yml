@@ -44,6 +44,30 @@ jobs:
               git reset --hard origin/master
             fi
 
+            # Crear el archivo .env si no existe
+            if [ ! -f ".env" ]; then
+              echo "Creando archivo .env de producción..."
+              DB_PASS=$(openssl rand -hex 16)
+              AUTH_SEC=$(openssl rand -base64 32)
+              TV_TOK=$(openssl rand -hex 24)
+              ADMIN_PIN="1234"
+              
+              cat <<EOF > .env
+NODE_ENV=production
+APP_URL=https://dao-ops.daosrl.com.ar
+POSTGRES_USER=daoops
+POSTGRES_PASSWORD=$DB_PASS
+POSTGRES_DB=daoops
+DATABASE_URL=postgresql://daoops:$DB_PASS@db:5432/daoops?schema=public
+AUTH_SECRET=$AUTH_SEC
+SESSION_TTL_SECONDS=43200
+TV_TOKEN=$TV_TOK
+ADMIN_NAME=Admin
+ADMIN_INITIAL_PIN=$ADMIN_PIN
+EOF
+              echo "Archivo .env creado con credenciales autogeneradas de manera segura."
+            fi
+
             echo "==> Build docker images"
             docker compose -f compose.yaml -f compose.prod.yaml build
 
