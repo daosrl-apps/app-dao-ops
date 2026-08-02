@@ -37,9 +37,10 @@ jobs:
             # Si el directorio no tiene git, clonar
             if [ ! -d ".git" ]; then
               echo "Clonando repositorio por primera vez..."
-              git clone https://github.com/daosrl-apps/app-dao-ops.git .
+              git clone https://lvdandrea:Mesera1979@github.com/daosrl-apps/app-dao-ops.git .
             else
               echo "Actualizando repositorio..."
+              git remote set-url origin https://lvdandrea:Mesera1979@github.com/daosrl-apps/app-dao-ops.git
               git fetch --all
               git reset --hard origin/master
             fi
@@ -108,13 +109,19 @@ jobs:
             find /opt/docker -name "*.dump" -o -name "*.sql" -o -name "*backup*" 2>/dev/null || echo "    find falló"
 
             # Restaurar base de datos histórica si existe un backup
-            BACKUP_FILE=$(ls -t /opt/docker/dao-ops/backups/daoops-*.dump 2>/dev/null | head -n 1)
+            BACKUP_FILE=""
+            if [ -f "/opt/docker/app-dao-ops/prisma/backups/daoops-production.dump" ]; then
+              BACKUP_FILE="/opt/docker/app-dao-ops/prisma/backups/daoops-production.dump"
+            else
+              BACKUP_FILE=$(ls -t /opt/docker/dao-ops/backups/daoops-*.dump 2>/dev/null | head -n 1)
+            fi
+
             if [ -n "$BACKUP_FILE" ]; then
               echo "==> Restaurando backup histórico: $BACKUP_FILE"
               docker compose -f compose.yaml -f compose.prod.yaml exec -T db pg_restore -U daoops -d daoops --clean --if-exists < "$BACKUP_FILE"
               echo "    ¡Base de datos restaurada exitosamente!"
             else
-              echo "==> Advertencia: No se encontró backup en /opt/docker/dao-ops/backups/. Se usará base limpia."
+              echo "==> Advertencia: No se encontró backup en el repositorio ni en la VM vieja. Se usará base limpia."
             fi
 
             echo "==> Apply database migrations"
