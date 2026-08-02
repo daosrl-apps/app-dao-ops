@@ -1,19 +1,13 @@
-# Overlay producción — el nginx compartido de `eventosips` termina TLS y
-# proxea *.beyondit.ar a los backends de la red externa `web-proxy`.
+# Configuración de producción para app-dao-ops
 services:
   db:
     ports: !reset []
     restart: always
 
   web:
-    ports: !reset []
+    ports:
+      - "8081:3000"
     restart: always
     environment:
       NODE_ENV: production
-    networks:
-      - default
-      - web-proxy
 
-networks:
-  web-proxy:
-    external: true

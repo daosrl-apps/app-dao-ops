@@ -43,9 +43,6 @@ jobs:
               git reset --hard origin/master
             fi
 
-            echo "==> Sincronizar vhost de nginx con el repo"
-            cp nginx/app-dao-ops.conf /opt/docker/eventosips/nginx/conf.d/app-dao-ops.conf
-
             echo "==> Build docker images"
             docker compose -f compose.yaml -f compose.prod.yaml build
 
@@ -61,15 +58,9 @@ jobs:
             docker compose -f compose.yaml -f compose.prod.yaml up -d db
             docker compose -f compose.yaml -f compose.prod.yaml up -d --force-recreate web
 
-            echo "==> Asegurar que web esté en la red web-proxy compartida"
-            docker network connect web-proxy app-dao-ops-web-1 2>/dev/null || true
-
-            echo "==> Nginx reload (proxy compartido de eventosips)"
-            docker exec eventosips-nginx-1 nginx -s reload
-
             echo "==> Esperar healthcheck"
             for i in 1 2 3 4 5 6 7 8 9 10; do
-              if curl -fsS https://dao-ops.daosrl.com.ar/api/health >/dev/null; then
+              if curl -fsS http://localhost:8081/api/health >/dev/null; then
                 echo "    ¡Aplicación saludable y en línea!"
                 exit 0
               fi
@@ -78,3 +69,4 @@ jobs:
             echo "Health check falló después del rollout" >&2
             docker compose -f compose.yaml -f compose.prod.yaml logs --tail=80 web >&2 || true
             exit 1
+
