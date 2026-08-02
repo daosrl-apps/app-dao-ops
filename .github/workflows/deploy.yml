@@ -91,6 +91,9 @@ jobs:
               sleep 2
             done
 
+            echo "==> Buscando archivos de backup en el VPS..."
+            find /opt/docker -name "*.dump" -o -name "*.sql" -o -name "*backup*" 2>/dev/null || echo "    find falló"
+
             # Restaurar base de datos histórica si existe un backup
             BACKUP_FILE=$(ls -t /opt/docker/dao-ops/backups/daoops-*.dump 2>/dev/null | head -n 1)
             if [ -n "$BACKUP_FILE" ]; then
