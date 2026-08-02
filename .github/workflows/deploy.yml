@@ -81,6 +81,17 @@ jobs:
             echo "==> Build docker images"
             docker compose -f compose.yaml -f compose.prod.yaml build
 
+            echo "=== DIAGNOSTICO DE LA VM ==="
+            echo "--> Contenedores Docker:"
+            docker ps -a
+            echo "--> Volumenes Docker:"
+            docker volume ls
+            echo "--> Carpetas en /opt/docker:"
+            ls -la /opt/docker || echo "No se pudo leer /opt/docker"
+            echo "--> Carpetas en /opt/docker/dao-ops:"
+            ls -la /opt/docker/dao-ops || echo "No se pudo leer /opt/docker/dao-ops"
+            echo "=== FIN DIAGNOSTICO ==="
+
             echo "==> Iniciar base de datos"
             docker compose -f compose.yaml -f compose.prod.yaml up -d db
             echo "    Esperando a que la base de datos esté lista..."
