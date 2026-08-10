@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: production
-      url: https://dao-ops.daosrl.com.ar
+      url: https://planta.daosrl.com.ar
 
     steps:
       - name: Deploy via SSH
@@ -30,7 +30,7 @@ jobs:
             set -e
             echo "Conectado al servidor. Iniciando despliegue de app-dao-ops..."
             
-            # Crear directorio de la app si no existe
+            # Crear directorio base si no existe
             mkdir -p /opt/docker/app-dao-ops
             cd /opt/docker/app-dao-ops
             
@@ -48,35 +48,16 @@ jobs:
             # Crear el archivo .env si no existe
             if [ ! -f ".env" ]; then
               echo "Creando archivo .env de producción..."
-              DB_PASS=$(openssl rand -hex 16)
-              AUTH_SEC=$(openssl rand -base64 32)
-              TV_TOK=$(openssl rand -hex 24)
+              JWT_SECRET=$(openssl rand -hex 32)
+              DATABASE_URL="postgresql://daoops:daoops_secret_pass@db:5432/daoops?schema=public"
               
               echo "NODE_ENV=production" > .env
-              echo "APP_URL=https://dao-ops.daosrl.com.ar" >> .env
-              echo "POSTGRES_USER=daoops" >> .env
-              echo "POSTGRES_PASSWORD=$DB_PASS" >> .env
-              echo "POSTGRES_DB=daoops" >> .env
-              echo "DATABASE_URL=postgresql://daoops:$DB_PASS@db:5432/daoops?schema=public" >> .env
-              echo "AUTH_SECRET=$AUTH_SEC" >> .env
-              echo "SESSION_TTL_SECONDS=43200" >> .env
-              echo "TV_TOKEN=$TV_TOK" >> .env
+              echo "DATABASE_URL=\"$DATABASE_URL\"" >> .env
+              echo "JWT_SECRET=\"$JWT_SECRET\"" >> .env
               echo "ADMIN_NAME=Admin" >> .env
               echo "ADMIN_USERNAME=Admin" >> .env
               echo "ADMIN_PASSWORD=admin1234" >> .env
               echo "Archivo .env creado con credenciales autogeneradas de manera segura."
-            fi
-
-            # Si el archivo .env ya existe pero no tiene el username/password configurado
-            if [ -f ".env" ] && ! grep -q "ADMIN_USERNAME" .env; then
-              echo "Agregando credenciales de supervisor al archivo .env existente..."
-              echo "ADMIN_USERNAME=Admin" >> .env
-              echo "ADMIN_PASSWORD=admin1234" >> .env
-            fi
-
-            # Normalizar username a Admin con mayúscula si existía en minúsculas
-            if [ -f ".env" ]; then
-              sed -i 's/ADMIN_USERNAME=admin/ADMIN_USERNAME=Admin/g' .env
             fi
 
             echo "==> Build docker images"
@@ -135,13 +116,22 @@ jobs:
                 npx tsx prisma/seed.ts < /dev/null || echo "    warn: seed falló, continuando"
             fi
 
-            echo "==> Bring services up (force-recreate web para rotar la imagen)"
-            docker compose -f compose.yaml -f compose.prod.yaml up -d --force-recreate web
+            # Asegurar certbot y certificado Let's Encrypt para planta.daosrl.com.ar
+            if [ ! -d "/etc/letsencrypt/live/planta.daosrl.com.ar" ]; then
+              echo "==> Instalando Certbot y emitiendo certificado SSL Let's Encrypt para planta.daosrl.com.ar..."
+              apt-get update -y && apt-get install -y certbot || true
+              docker stop dao-metricas-nginx 2>/dev/null || true
+              certbot certonly --standalone -d planta.daosrl.com.ar --non-interactive --agree-tos --register-unsafely-without-email || true
+              docker start dao-metricas-nginx 2>/dev/null || true
+            fi
+
+            echo "==> Bring services up (force-recreate web y nginx)"
+            docker compose -f compose.yaml -f compose.prod.yaml up -d --force-recreate web nginx
 
             echo "==> Esperar healthcheck"
             for i in 1 2 3 4 5 6 7 8 9 10; do
               if curl -fsS http://localhost:8081/api/health >/dev/null; then
-                echo "    ¡Aplicación saludable y en línea!"
+                echo "    ¡Aplicación saludable y en línea en http://localhost:8081 y https://planta.daosrl.com.ar!"
                 exit 0
               fi
               sleep 5
@@ -149,4 +139,3 @@ jobs:
             echo "Health check falló después del rollout" >&2
             docker compose -f compose.yaml -f compose.prod.yaml logs --tail=80 web >&2 || true
             exit 1
-
