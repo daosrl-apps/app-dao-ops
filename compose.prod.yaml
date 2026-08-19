@@ -16,6 +16,7 @@ services:
     restart: always
     ports:
       - "443:443"
+      - "80:80"
     volumes:
       - ./nginx/app-dao-ops.conf:/etc/nginx/conf.d/default.conf:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
