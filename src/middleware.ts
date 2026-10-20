@@ -68,6 +68,15 @@ export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   if (pathname.startsWith("/tv") || pathname.startsWith("/api/tv")) {
+    const sessionToken = req.cookies.get(SESSION_COOKIE)?.value;
+    if (sessionToken) {
+      try {
+        await jwtVerify(sessionToken, SECRET, { algorithms: ["HS256"] });
+        return NextResponse.next();
+      } catch {
+        // Fallback al chequeo por TV_TOKEN
+      }
+    }
     return handleTv(req);
   }
 
