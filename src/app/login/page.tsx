@@ -12,6 +12,16 @@ export default function LoginPage() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-[#1627b1] p-6">
       <div className="flex flex-col items-center gap-8 w-full max-w-md">
+        <div className="w-full flex justify-between items-center">
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+          <a
+            href="/"
+            className="inline-flex items-center gap-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold px-3 py-1.5 text-xs shadow transition-all"
+            title="Volver al Portal Principal de DAO PLANTA"
+          >
+            ← Volver a DAO PLANTA
+          </a>
+        </div>
         <header className="flex flex-col items-center gap-4">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo.svg" alt="DAO SRL" className="h-auto w-44 drop-shadow" />
