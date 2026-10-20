@@ -19,6 +19,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <span className="hidden sm:inline text-lg font-semibold tracking-wide">dao-ops</span>
         </Link>
         <div className="flex items-center gap-3">
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
           <a
             href="/"
             className="inline-flex h-11 items-center gap-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 px-4 text-sm font-semibold shadow transition-all"

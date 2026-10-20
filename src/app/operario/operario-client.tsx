@@ -179,6 +179,7 @@ export function OperarioClient({ userName, role }: { userName: string; role: str
           <p className="text-xs text-slate-400">{rolLabel(role)} · línea</p>
         </div>
         <div className="flex gap-2 items-center">
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
           <a
             href="/"
             className="inline-flex h-12 items-center gap-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold px-4 text-base shadow"
