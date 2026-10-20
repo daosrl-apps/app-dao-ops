@@ -42,7 +42,11 @@ export async function POST(req: NextRequest) {
   }
 
   const user = await prisma.user.findFirst({
-    where: { username, isActive: true, deletedAt: null },
+    where: {
+      username: { equals: username, mode: "insensitive" },
+      isActive: true,
+      deletedAt: null,
+    },
     select: {
       id: true,
       name: true,

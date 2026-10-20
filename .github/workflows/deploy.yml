@@ -89,32 +89,32 @@ jobs:
             echo "==> Buscando archivos de backup en el VPS..."
             find /opt/docker -name "*.dump" -o -name "*.sql" -o -name "*backup*" 2>/dev/null || echo "    find falló"
 
-            # Restaurar base de datos histórica si existe un backup
-            BACKUP_FILE=""
-            if [ -f "/opt/docker/app-dao-ops/prisma/backups/daoops-production.dump" ]; then
-              BACKUP_FILE="/opt/docker/app-dao-ops/prisma/backups/daoops-production.dump"
-            else
-              BACKUP_FILE=$(ls -t /opt/docker/dao-ops/backups/daoops-*.dump 2>/dev/null | head -n 1)
-            fi
+            # Restaurar base de datos histórica solo si es primera vez para proteger datos en vivo
+            if [ ! -f "/opt/docker/app-dao-ops/.db_restored" ]; then
+              BACKUP_FILE=""
+              if [ -f "/opt/docker/app-dao-ops/prisma/backups/daoops-production.dump" ]; then
+                BACKUP_FILE="/opt/docker/app-dao-ops/prisma/backups/daoops-production.dump"
+              else
+                BACKUP_FILE=$(ls -t /opt/docker/dao-ops/backups/daoops-*.dump 2>/dev/null | head -n 1)
+              fi
 
-            if [ -n "$BACKUP_FILE" ]; then
-              echo "==> Restaurando backup histórico: $BACKUP_FILE"
-              docker compose -f compose.yaml -f compose.prod.yaml exec -T db pg_restore -U daoops -d daoops --clean --if-exists < "$BACKUP_FILE"
-              echo "    ¡Base de datos restaurada exitosamente!"
+              if [ -n "$BACKUP_FILE" ]; then
+                echo "==> Restaurando backup histórico inicial: $BACKUP_FILE"
+                docker compose -f compose.yaml -f compose.prod.yaml exec -T db pg_restore -U daoops -d daoops --clean --if-exists < "$BACKUP_FILE" || echo "    pg_restore finalizó con avisos normales"
+                touch /opt/docker/app-dao-ops/.db_restored
+                echo "    ¡Base de datos restaurada por primera vez!"
+              fi
             else
-              echo "==> Advertencia: No se encontró backup en el repositorio ni en la VM vieja. Se usará base limpia."
+              echo "==> Base de datos de producción ya inicializada. Preservando datos existentes."
             fi
 
             echo "==> Apply database migrations"
             docker compose -f compose.yaml -f compose.prod.yaml run --rm -T web \
               npx prisma migrate deploy < /dev/null
 
-            # Solo correr el seed si NO se restauró un backup
-            if [ -z "$BACKUP_FILE" ]; then
-              echo "==> Seed database (base limpia)"
-              docker compose -f compose.yaml -f compose.prod.yaml run --rm -T web \
-                npx tsx prisma/seed.ts < /dev/null || echo "    warn: seed falló, continuando"
-            fi
+            echo "==> Seed database (sincronizar credenciales de supervisores y operarios)"
+            docker compose -f compose.yaml -f compose.prod.yaml run --rm -T web \
+              npx tsx prisma/seed.ts < /dev/null || echo "    warn: seed falló, continuando"
 
             # Asegurar certbot y certificado Let's Encrypt para planta.daosrl.com.ar
             if [ ! -d "/etc/letsencrypt/live/planta.daosrl.com.ar" ]; then

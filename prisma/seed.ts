@@ -19,69 +19,106 @@ import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
-async function main() {
-  const name = process.env.ADMIN_NAME ?? "Admin";
-  const username = process.env.ADMIN_USERNAME;
-  const password = process.env.ADMIN_PASSWORD;
-  const pin = process.env.ADMIN_INITIAL_PIN;
-
-  const tienePassword = !!username && !!password;
-  const tienePin = !!pin && /^\d{6}$/.test(pin);
-
-  if (!tienePassword && !tienePin) {
-    console.log(
-      "Seed: ni ADMIN_USERNAME/ADMIN_PASSWORD ni ADMIN_INITIAL_PIN seteados — no se toca el admin.",
-    );
-    return;
-  }
-
-  if (tienePassword && (password!.length < 8 || !/^[a-zA-Z0-9._-]{3,40}$/.test(username!))) {
-    throw new Error(
-      "ADMIN_USERNAME debe ser 3-40 chars (letras/números/._-) y ADMIN_PASSWORD ≥8 caracteres.",
-    );
-  }
-
+async function upsertPlantUser({
+  name,
+  username,
+  password,
+  pin,
+  role = Role.ADMIN,
+}: {
+  name: string;
+  username: string;
+  password?: string;
+  pin?: string;
+  role?: Role;
+}) {
   const data: {
     name: string;
+    username: string;
     role: Role;
     isActive: boolean;
     failedAttempts: number;
     lockedUntil: null;
     pinHash?: string;
-    username?: string;
     passwordHash?: string;
   } = {
     name,
-    role: Role.ADMIN,
+    username,
+    role,
     isActive: true,
     failedAttempts: 0,
     lockedUntil: null,
   };
 
-  if (tienePassword) {
-    data.username = username;
-    data.passwordHash = await bcrypt.hash(password!, 12);
+  if (password) {
+    data.passwordHash = await bcrypt.hash(password, 12);
   }
-  if (tienePin) {
-    data.pinHash = await bcrypt.hash(pin!, 12);
+  if (pin) {
+    data.pinHash = await bcrypt.hash(pin, 12);
   }
 
   const existing = await prisma.user.findFirst({
     where: {
       OR: [
-        username ? { username } : { id: "__never__" },
-        { name, role: Role.ADMIN },
+        { username: { equals: username, mode: "insensitive" } },
+        { name: { equals: name, mode: "insensitive" } },
       ],
     },
   });
 
   if (existing) {
-    await prisma.user.update({ where: { id: existing.id }, data });
-    console.log(`Admin actualizado (${tienePassword ? "username+password" : ""}${tienePassword && tienePin ? " + " : ""}${tienePin ? "PIN" : ""}).`);
+    await prisma.user.update({
+      where: { id: existing.id },
+      data: {
+        ...data,
+        pinHash: data.pinHash ?? existing.pinHash,
+      },
+    });
+    console.log(`Usuario '${username}' (${role}) actualizado.`);
   } else {
     await prisma.user.create({ data });
-    console.log(`Admin creado (${tienePassword ? "username+password" : ""}${tienePassword && tienePin ? " + " : ""}${tienePin ? "PIN" : ""}).`);
+    console.log(`Usuario '${username}' (${role}) creado exitosamente.`);
   }
+}
+
+async function main() {
+  console.log("==> Sincronizando usuarios de planta y administradores...");
+
+  // 1. Luciano (Administrador de Planta, credenciales de DAO PLANTA)
+  await upsertPlantUser({
+    name: "Luciano",
+    username: "luciano",
+    password: "mesera1979",
+    pin: "123456",
+    role: Role.ADMIN,
+  });
+
+  // 2. Admin genérico por variables de entorno
+  const envUser = process.env.ADMIN_USERNAME ?? "Admin";
+  const envPass = process.env.ADMIN_PASSWORD ?? "admin1234";
+  const envPin = process.env.ADMIN_INITIAL_PIN;
+  await upsertPlantUser({
+    name: process.env.ADMIN_NAME ?? "Admin",
+    username: envUser,
+    password: envPass,
+    pin: envPin,
+    role: Role.ADMIN,
+  });
+
+  // 3. Supervisores de planta (Rodrigo y Lautaro)
+  await upsertPlantUser({
+    name: "Rodrigo",
+    username: "rodrigo",
+    password: "28021980",
+    role: Role.SUPERVISOR,
+  });
+
+  await upsertPlantUser({
+    name: "Lautaro",
+    username: "lautaro",
+    password: "lautaro",
+    role: Role.SUPERVISOR,
+  });
 
   await seedTurnos();
 }
