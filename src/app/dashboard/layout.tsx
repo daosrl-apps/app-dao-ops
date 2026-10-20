@@ -19,6 +19,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <span className="hidden sm:inline text-lg font-semibold tracking-wide">dao-ops</span>
         </Link>
         <div className="flex items-center gap-3">
+          <a
+            href="/"
+            className="inline-flex h-11 items-center gap-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 px-4 text-sm font-semibold shadow transition-all"
+            title="Volver al Portal Principal de DAO PLANTA"
+          >
+            ← DAO PLANTA
+          </a>
           <Link
             href="/dashboard"
             className="inline-flex h-11 items-center gap-2 rounded-xl bg-white/10 hover:bg-white/20 px-4 text-sm font-medium border border-white/20"

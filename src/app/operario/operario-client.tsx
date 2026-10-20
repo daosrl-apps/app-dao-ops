@@ -178,7 +178,14 @@ export function OperarioClient({ userName, role }: { userName: string; role: str
           <p className="text-base font-medium">{userName}</p>
           <p className="text-xs text-slate-400">{rolLabel(role)} · línea</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          <a
+            href="/"
+            className="inline-flex h-12 items-center gap-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold px-4 text-base shadow"
+            title="Volver al Portal Principal de DAO PLANTA"
+          >
+            ← DAO PLANTA
+          </a>
           {role !== "OPERARIO" && (
             <Link
               href="/dashboard"
