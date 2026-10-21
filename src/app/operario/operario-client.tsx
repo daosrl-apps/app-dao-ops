@@ -189,10 +189,10 @@ export function OperarioClient({ userName, role }: { userName: string; role: str
           </a>
           {role !== "OPERARIO" && (
             <Link
-              href="/dashboard"
+              href="/dashboard/ordenes"
               className="inline-flex h-12 items-center gap-2 rounded-xl border border-slate-600 px-4 text-base hover:bg-slate-700"
             >
-              <Home className="h-5 w-5" /> Dashboard
+              <Home className="h-5 w-5" /> Órdenes
             </Link>
           )}
           <form action="/api/auth/logout" method="POST">

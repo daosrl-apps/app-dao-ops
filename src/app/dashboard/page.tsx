@@ -100,7 +100,10 @@ export default async function DashboardPage() {
   // Operario va directo a su vista de ejecución.
   if (claims.role === "OPERARIO") redirect("/operario");
 
-  const visibles = TARJETAS.filter((t) => t.roles.includes(claims.role));
+  // Redirigir siempre a la herramienta principal (Órdenes de Trabajo)
+  // para evitar menús duplicados con DAO PLANTA.
+  redirect("/dashboard/ordenes");
+
 
   return (
     <section className="mx-auto w-full max-w-6xl p-6">
