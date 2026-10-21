@@ -103,28 +103,4 @@ export default async function DashboardPage() {
   // Redirigir siempre a la herramienta principal (Órdenes de Trabajo)
   // para evitar menús duplicados con DAO PLANTA.
   redirect("/dashboard/ordenes");
-
-
-  return (
-    <section className="mx-auto w-full max-w-6xl p-6">
-      <h1 className="text-3xl font-bold text-slate-800 mb-2">Hola {claims.name}</h1>
-      <p className="text-slate-600 mb-8">Elegí qué hacer.</p>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {visibles.map((t) => (
-          <Link
-            key={t.href}
-            href={t.href}
-            className="flex items-start gap-4 rounded-2xl bg-white p-5 shadow-sm border border-slate-200 hover:border-[#1627b1] hover:shadow transition"
-          >
-            <t.icon className="h-10 w-10 text-[#1627b1] shrink-0" aria-hidden />
-            <div>
-              <h2 className="text-xl font-semibold text-slate-800">{t.titulo}</h2>
-              <p className="text-sm text-slate-600 mt-1">{t.desc}</p>
-            </div>
-          </Link>
-        ))}
-      </div>
-    </section>
-  );
 }
