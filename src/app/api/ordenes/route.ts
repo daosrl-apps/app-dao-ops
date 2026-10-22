@@ -38,6 +38,7 @@ import { prisma } from "@/lib/db";
 import { requireSessionApi } from "@/lib/auth-guards";
 import {
   duracionItem,
+  ceilAMinuto,
   GAP_BASE_SEG,
   CAMBIO_COLOR_SEG,
   minimoInicio,
