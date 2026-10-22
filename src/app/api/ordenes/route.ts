@@ -52,7 +52,7 @@ const Body = z.object({
   color: z.string().min(1),
   cantidad: z.number().int().positive(),
   inicioProgramado: z.string().datetime(),
-  piezasPorPercha: z.number().int().min(1).max(10).nullable().optional(),
+  piezasPorPercha: z.number().positive().max(10).nullable().optional(),
   velocidadLavado: z.number().min(0.1).max(3.0).nullable().optional(),
   split: z
     .object({

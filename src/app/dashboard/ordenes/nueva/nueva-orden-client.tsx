@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { formatFechaHora as fmtFechaHoraUtil } from "@/lib/utils";
+import { PIEZAS_POR_PERCHA_OPTIONS } from "@/lib/linea";
 
 type Tipo = "LAVADO" | "PINTURA";
 
@@ -261,8 +262,10 @@ export function NuevaOrdenClient() {
                 value={piezasPorPercha}
                 onChange={(e) => setPiezasPorPercha(Number(e.target.value))}
               >
-                {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
-                  <option key={n} value={n}>{n}</option>
+                {PIEZAS_POR_PERCHA_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
                 ))}
               </Select>
             </label>

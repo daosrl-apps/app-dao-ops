@@ -163,8 +163,8 @@ model OrdenTrabajo {
   /// Color resuelto al cargar la OT. En LAVADO no se usa.
   color              String
   cantidad           Int
-  /// Solo aplica a LAVADO.
-  piezasPorPercha    Int?
+  /// Solo aplica a LAVADO. Puede ser fraccionario si una pieza grande ocupa varias perchas.
+  piezasPorPercha    Float?
   /// Solo aplica a LAVADO. Velocidad del circuito en m/min. Rango 0.1..3.0.
   velocidadLavado    Float?
   /// Snapshot de configPerchas del Articulo al crear la OT (para no perder

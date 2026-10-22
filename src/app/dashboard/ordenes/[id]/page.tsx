@@ -4,6 +4,7 @@ import { Droplets, Paintbrush } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/auth-guards";
 import { formatFechaHora } from "@/lib/utils";
+import { formatPiezasPorPercha } from "@/lib/linea";
 import { PausasListClient, type PausaItem } from "./pausas-list-client";
 import { EditarOTButton } from "./editar-ot-button";
 
@@ -87,7 +88,7 @@ export default async function OrdenDetailPage({
         {ot.cantidad} piezas
         {ot.tipo === "PINTURA" && ` · ${ot.color}`}
         {ot.tipo === "LAVADO" && ot.piezasPorPercha != null && ot.velocidadLavado != null && (
-          <> · {ot.piezasPorPercha}/percha · {ot.velocidadLavado} m/min</>
+          <> · {formatPiezasPorPercha(ot.piezasPorPercha)} · {ot.velocidadLavado} m/min</>
         )}
       </p>
 

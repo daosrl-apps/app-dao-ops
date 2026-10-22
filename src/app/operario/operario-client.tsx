@@ -22,7 +22,7 @@ import {
   CalendarDays,
   X,
 } from "lucide-react";
-import type { LineaSnapshot, LineaOrden, LineaAgenda } from "@/lib/linea";
+import { type LineaSnapshot, type LineaOrden, type LineaAgenda, formatPiezasPorPercha } from "@/lib/linea";
 
 const POLL_MS = 2000;
 
@@ -373,7 +373,7 @@ function OrdenPendiente({
         {item.tipo === "LAVADO" &&
           item.piezasPorPercha != null &&
           item.velocidadLavado != null &&
-          ` · ${item.piezasPorPercha}/percha · ${item.velocidadLavado} m/min`}
+          ` · ${formatPiezasPorPercha(item.piezasPorPercha)} · ${item.velocidadLavado} m/min`}
       </p>
       <button
         onClick={onIniciar}
@@ -432,7 +432,7 @@ function OrdenEnCurso({
           item.piezasPorPercha != null &&
           item.velocidadLavado != null && (
             <p className="text-2xl md:text-3xl font-bold text-slate-300 mt-1">
-              {item.piezasPorPercha}/percha · {item.velocidadLavado} m/min
+              {formatPiezasPorPercha(item.piezasPorPercha)} · {item.velocidadLavado} m/min
             </p>
           )}
         <p className="text-xl font-semibold text-slate-400 mt-1">{item.cantidad} piezas</p>

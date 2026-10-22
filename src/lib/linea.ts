@@ -221,3 +221,36 @@ export async function resolverAgendaDia(): Promise<LineaAgenda> {
 
   return { serverNow: ahora.toISOString(), hoy, manana };
 }
+
+export const PIEZAS_POR_PERCHA_OPTIONS = [
+  { value: 0.05, label: "0.05 (1 pieza cada 20 perchas)" },
+  { value: 0.0556, label: "0.056 (1 pieza cada 18 perchas)" },
+  { value: 0.0625, label: "0.0625 (1 pieza cada 16 perchas)" },
+  { value: 0.0714, label: "0.071 (1 pieza cada 14 perchas)" },
+  { value: 0.0833, label: "0.083 (1 pieza cada 12 perchas)" },
+  { value: 0.1, label: "0.1 (1 pieza cada 10 perchas)" },
+  { value: 0.125, label: "0.125 (1 pieza cada 8 perchas)" },
+  { value: 0.1667, label: "0.167 (1 pieza cada 6 perchas)" },
+  { value: 0.25, label: "0.25 (1 pieza cada 4 perchas)" },
+  { value: 0.5, label: "0.5 (1 pieza cada 2 perchas)" },
+  { value: 1, label: "1 (1 pieza por percha)" },
+  { value: 2, label: "2" },
+  { value: 3, label: "3" },
+  { value: 4, label: "4" },
+  { value: 5, label: "5" },
+  { value: 6, label: "6" },
+  { value: 7, label: "7" },
+  { value: 8, label: "8" },
+  { value: 9, label: "9" },
+  { value: 10, label: "10" },
+];
+
+export function formatPiezasPorPercha(p: number | null | undefined): string {
+  if (p == null) return "";
+  if (p < 1) {
+    const perchas = Math.round(1 / p);
+    return `1 pz cada ${perchas} perchas`;
+  }
+  return `${p}/percha`;
+}
+

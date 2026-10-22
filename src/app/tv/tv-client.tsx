@@ -19,7 +19,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { Droplets, Paintbrush, LayoutGrid } from "lucide-react";
-import type { LineaSnapshot, LineaOrden } from "@/lib/linea";
+import { type LineaSnapshot, type LineaOrden, formatPiezasPorPercha } from "@/lib/linea";
 
 const POLL_MS = 2000;
 
@@ -231,7 +231,7 @@ function RowActual({
             item.piezasPorPercha != null &&
             item.velocidadLavado != null && (
               <p className="text-2xl md:text-3xl font-bold mt-1 text-slate-200">
-                {item.piezasPorPercha}/percha · {item.velocidadLavado} m/min
+                {formatPiezasPorPercha(item.piezasPorPercha)} · {item.velocidadLavado} m/min
               </p>
             )
           )}
