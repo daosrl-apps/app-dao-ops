@@ -124,6 +124,16 @@ export default async function OrdenDetailPage({
             <span className="text-base text-slate-500">Inicio programado</span>
             <span className="text-lg font-semibold tabular-nums">{formatDT(ot.inicioProgramado)}</span>
           </div>
+          {((ot.minutosGanchera ?? 0) > 0 || (ot.minutosColor ?? 0) > 0) && (
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-base text-slate-500">Transición previa</span>
+              <span className="text-base font-semibold text-indigo-700">
+                {(ot.minutosGanchera ?? 0) > 0 ? `${ot.minutosGanchera} min ganchera` : ""}
+                {(ot.minutosGanchera ?? 0) > 0 && (ot.minutosColor ?? 0) > 0 ? " + " : ""}
+                {(ot.minutosColor ?? 0) > 0 ? `${ot.minutosColor} min color/cabina` : ""}
+              </span>
+            </div>
+          )}
           <div className="flex items-baseline justify-between gap-3">
             <span className="text-base text-slate-500">Creado por</span>
             <span className="text-lg font-semibold">{ot.creadoPor.name}</span>

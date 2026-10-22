@@ -42,6 +42,12 @@ export async function GET(req: NextRequest) {
       tipo: true,
       color: true,
       finTeorico: true,
+      articulo: {
+        select: {
+          codigo: true,
+          descripcion: true,
+        },
+      },
     },
   });
 
@@ -56,29 +62,22 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  // Calculamos el gap aplicable contra esta nueva OT hipotética.
-  let gapSeg = GAP_BASE_SEG;
-  let razon: "base" | "cambio_color" = "base";
-  if (tipo === "PINTURA" && ultima.tipo === "PINTURA") {
-    const cambiaColor = ultima.color.trim().toLowerCase() !== color.toLowerCase();
-    if (cambiaColor) {
-      gapSeg = GAP_BASE_SEG + CAMBIO_COLOR_SEG;
-      razon = "cambio_color";
-    }
-  }
+  // Base mínima sin solaparse: fin teórico de la anterior redondeado al minuto
+  const minimo = ceilAMinuto(ultima.finTeorico);
 
-  const sugerido = minimoInicio(ultima.finTeorico, gapSeg);
   return NextResponse.json({
-    sugerido: sugerido.toISOString(),
-    minimo: sugerido.toISOString(),
-    gapSeg,
-    razon,
+    sugerido: minimo.toISOString(),
+    minimo: minimo.toISOString(),
+    gapSeg: 0,
+    razon: "con_orden_previa",
     ordenAnterior: {
       id: ultima.id,
       numero: ultima.numero,
       finTeorico: ultima.finTeorico.toISOString(),
       color: ultima.color,
       tipo: ultima.tipo,
+      codigo: ultima.articulo?.codigo ?? null,
+      descripcion: ultima.articulo?.descripcion ?? null,
     },
   });
 }

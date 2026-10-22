@@ -54,6 +54,8 @@ const Body = z.object({
   inicioProgramado: z.string().datetime(),
   piezasPorPercha: z.number().positive().max(10).nullable().optional(),
   velocidadLavado: z.number().min(0.1).max(3.0).nullable().optional(),
+  minutosGanchera: z.number().int().min(0).max(1440).optional().default(0),
+  minutosColor: z.number().int().min(0).max(1440).optional().default(0),
   split: z
     .object({
       cantidadHoy: z.number().int().positive(),
@@ -132,18 +134,12 @@ export async function POST(req: NextRequest) {
     select: { id: true, numero: true, tipo: true, color: true, finTeorico: true },
   });
   if (ultima) {
-    let gapSeg = GAP_BASE_SEG;
-    if (data.tipo === "PINTURA" && ultima.tipo === "PINTURA") {
-      const cambiaColor = ultima.color.trim().toLowerCase() !== data.color.trim().toLowerCase();
-      if (cambiaColor) gapSeg = GAP_BASE_SEG + CAMBIO_COLOR_SEG;
-    }
-    const minimo = minimoInicio(ultima.finTeorico, gapSeg);
-    if (inicio.getTime() < minimo.getTime()) {
+    const minPermitido = ceilAMinuto(ultima.finTeorico);
+    if (inicio.getTime() < minPermitido.getTime()) {
       return NextResponse.json(
         {
-          error: "El horario de inicio se solapa con otra OT.",
-          minimo: minimo.toISOString(),
-          gapSeg,
+          error: "El horario de inicio se solapa con la OT anterior en curso.",
+          minimo: minPermitido.toISOString(),
           ordenAnterior: { numero: ultima.numero, finTeorico: ultima.finTeorico.toISOString() },
         },
         { status: 409 },
@@ -210,6 +206,8 @@ export async function POST(req: NextRequest) {
         piezasPorPercha: data.tipo === "LAVADO" ? (data.piezasPorPercha ?? null) : null,
         velocidadLavado: data.tipo === "LAVADO" ? (data.velocidadLavado ?? null) : null,
         configPerchas: articulo.configPerchas ?? null,
+        minutosGanchera: data.minutosGanchera ?? 0,
+        minutosColor: data.minutosColor ?? 0,
         inicioProgramado: inicio,
         inicioTeorico: inicio,
         finTeorico: new Date(inicio.getTime() + durHoy * 1000),
@@ -258,6 +256,8 @@ export async function POST(req: NextRequest) {
       piezasPorPercha: data.tipo === "LAVADO" ? (data.piezasPorPercha ?? null) : null,
       velocidadLavado: data.tipo === "LAVADO" ? (data.velocidadLavado ?? null) : null,
       configPerchas: articulo.configPerchas ?? null,
+      minutosGanchera: data.minutosGanchera ?? 0,
+      minutosColor: data.minutosColor ?? 0,
       inicioProgramado: inicio,
       inicioTeorico: inicio,
       finTeorico: new Date(inicio.getTime() + duracionSegOriginal * 1000),

@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "OrdenTrabajo" ADD COLUMN "minutosGanchera" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "OrdenTrabajo" ADD COLUMN "minutosColor" INTEGER NOT NULL DEFAULT 0;

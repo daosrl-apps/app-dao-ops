@@ -257,12 +257,14 @@ export function requiereJustificacion(
 export interface ItemReencadenable extends ItemParaCambio {
   /** Duración propia del ítem en segundos (no cambia al reordenar). */
   duracionSeg: number;
+  /** Gap específico asignado a esta OT (en segundos). Si no se define, usa tiempoCambioSeg. */
+  gapSeg?: number;
 }
 
 /**
  * Recalcula inicio/fin de una lista de OTs ya ordenada, anclando la primera en
  * `anclaInicio` y encadenando el resto con el gap aplicable entre cada par
- * (15 min base, +30 si cambia de color en PINTURA → PINTURA). A diferencia de
+ * (o el `gapSeg` personalizado de cada ítem). A diferencia de
  * `planificar`, no recalcula la duración: la toma de `duracionSeg` (la OT ya
  * tiene su cantidad/artículo definidos, reordenar no los cambia).
  */
@@ -274,7 +276,11 @@ export function reencadenar(
   let cursor = anclaInicio.getTime();
   let anterior: ItemReencadenable | null = null;
   for (const item of items) {
-    const cambioSeg = anterior ? tiempoCambioSeg(anterior, item) : 0;
+    const cambioSeg = anterior
+      ? item.gapSeg !== undefined
+        ? item.gapSeg
+        : tiempoCambioSeg(anterior, item)
+      : 0;
     const inicioMs = cursor + cambioSeg * 1000;
     const finMs = inicioMs + item.duracionSeg * 1000;
     out.push({ inicio: new Date(inicioMs), fin: new Date(finMs) });
@@ -351,7 +357,11 @@ export function reencadenarEnJornada(
   let cursor = anclaInicio.getTime();
   let anterior: ItemReencadenable | null = null;
   for (const item of items) {
-    const cambioSeg = anterior ? tiempoCambioSeg(anterior, item) : 0;
+    const cambioSeg = anterior
+      ? item.gapSeg !== undefined
+        ? item.gapSeg
+        : tiempoCambioSeg(anterior, item)
+      : 0;
     const inicioMs = colocarEnJornada(cursor + cambioSeg * 1000, item.duracionSeg, resolver);
     const finMs = inicioMs + item.duracionSeg * 1000;
     out.push({ inicio: new Date(inicioMs), fin: new Date(finMs) });

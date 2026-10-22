@@ -16,7 +16,7 @@
  */
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Check, Droplets, Paintbrush, X } from "lucide-react";
+import { AlertTriangle, Check, Clock, Droplets, Paintbrush, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -52,8 +52,16 @@ interface Sugerencia {
   sugerido: string;
   minimo: string;
   gapSeg: number;
-  razon: "base" | "cambio_color" | "sin_orden_previa";
-  ordenAnterior: { numero: number; finTeorico: string; color: string; tipo: Tipo } | null;
+  razon: "con_orden_previa" | "sin_orden_previa" | "base" | "cambio_color";
+  ordenAnterior: {
+    id: string;
+    numero: number;
+    finTeorico: string;
+    color: string;
+    tipo: Tipo;
+    codigo?: string | null;
+    descripcion?: string | null;
+  } | null;
 }
 
 interface SplitInfo {
@@ -78,11 +86,28 @@ export function NuevaOrdenClient() {
   const [inicioFecha, setInicioFecha] = React.useState<string>(() => hoyISO());
   const [inicioHora, setInicioHora] = React.useState<string>(() => ahoraHHMM());
 
+  // Transiciones interactivas con la orden anterior
+  const [requiereGanchera, setRequiereGanchera] = React.useState<boolean | null>(null);
+  const [minutosGanchera, setMinutosGanchera] = React.useState<string>("");
+
+  const [requiereColor, setRequiereColor] = React.useState<boolean | null>(null);
+  const [minutosColor, setMinutosColor] = React.useState<string>("");
+
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [splitInfo, setSplitInfo] = React.useState<SplitInfo | null>(null);
 
-  // Refrescamos la sugerencia cada vez que cambia tipo/color (afecta el gap).
+  // Determinar si aplica evaluar cambio de color o preparación de cabina
+  const aplicaColor = React.useMemo(() => {
+    if (!sugerencia?.ordenAnterior) return false;
+    return tipo === "PINTURA" || sugerencia.ordenAnterior.tipo === "PINTURA";
+  }, [tipo, sugerencia?.ordenAnterior]);
+
+  const gancheraMin = requiereGanchera === true ? Number(minutosGanchera || 0) : 0;
+  const colorMin = requiereColor === true ? Number(minutosColor || 0) : 0;
+  const totalGapMin = gancheraMin + colorMin;
+
+  // Refrescamos la sugerencia cada vez que cambia tipo/color.
   React.useEffect(() => {
     let cancelled = false;
     const fetchSugerencia = async () => {
@@ -92,15 +117,28 @@ export function NuevaOrdenClient() {
       const data: Sugerencia = await res.json();
       if (cancelled) return;
       setSugerencia(data);
-      const d = new Date(data.sugerido);
-      setInicioFecha(toYMD(d));
-      setInicioHora(toHHMM(d));
+      if (!data.ordenAnterior) {
+        const d = new Date(data.sugerido);
+        setInicioFecha(toYMD(d));
+        setInicioHora(toHHMM(d));
+      }
     };
     fetchSugerencia();
     return () => {
       cancelled = true;
     };
   }, [tipo, color]);
+
+  // Recalcular dinámicamente el inicio sugerido según los minutos de transición configurados
+  React.useEffect(() => {
+    if (!sugerencia?.ordenAnterior) return;
+    const finPrev = new Date(sugerencia.ordenAnterior.finTeorico);
+    const nuevoInicio = new Date(finPrev.getTime() + totalGapMin * 60 * 1000);
+    const MIN_MS = 60_000;
+    const inicioRedondeado = new Date(Math.ceil(nuevoInicio.getTime() / MIN_MS) * MIN_MS);
+    setInicioFecha(toYMD(inicioRedondeado));
+    setInicioHora(toHHMM(inicioRedondeado));
+  }, [sugerencia?.ordenAnterior?.finTeorico, totalGapMin]);
 
   // Puede ser null mientras el usuario está editando los campos (fecha/hora incompletas).
   const inicioISO = React.useMemo(() => {
@@ -112,11 +150,38 @@ export function NuevaOrdenClient() {
     return date.toISOString();
   }, [inicioFecha, inicioHora]);
 
-  // Validación: el inicio elegido no puede ser menor al sugerido (= mínimo).
+  // Validación: el inicio elegido no puede ser menor al fin de la orden anterior en curso.
   const inicioTooEarly = React.useMemo(() => {
-    if (!sugerencia || !inicioISO) return false;
-    return new Date(inicioISO).getTime() < new Date(sugerencia.minimo).getTime() - 60_000;
-  }, [inicioISO, sugerencia]);
+    if (!sugerencia?.ordenAnterior || !inicioISO) return false;
+    const minMs = new Date(sugerencia.ordenAnterior.finTeorico).getTime();
+    return new Date(inicioISO).getTime() < minMs - 30_000;
+  }, [inicioISO, sugerencia?.ordenAnterior]);
+
+  const gancheraValida =
+    !sugerencia?.ordenAnterior ||
+    requiereGanchera === false ||
+    (requiereGanchera === true && Number(minutosGanchera) > 0);
+
+  const colorValido =
+    !sugerencia?.ordenAnterior ||
+    !aplicaColor ||
+    requiereColor === false ||
+    (requiereColor === true && Number(minutosColor) > 0);
+
+  const pendienteGanchera = !!sugerencia?.ordenAnterior && requiereGanchera === null;
+  const pendienteColor = !!sugerencia?.ordenAnterior && aplicaColor && requiereColor === null;
+
+  const puedeGuardar =
+    !!articulo &&
+    !!cantidad &&
+    Number(cantidad) > 0 &&
+    !!inicioISO &&
+    !inicioTooEarly &&
+    gancheraValida &&
+    colorValido &&
+    !pendienteGanchera &&
+    !pendienteColor &&
+    (tipo !== "PINTURA" || !!color || !!articulo?.color);
 
   const guardar = async (opts?: { cantidadHoy?: number; forzarCompleto?: boolean }) => {
     if (!inicioISO) {
@@ -133,6 +198,8 @@ export function NuevaOrdenClient() {
       inicioProgramado: inicioISO,
       piezasPorPercha: tipo === "LAVADO" ? piezasPorPercha : null,
       velocidadLavado: tipo === "LAVADO" ? velocidadLavado : null,
+      minutosGanchera: gancheraMin,
+      minutosColor: colorMin,
       split: opts?.cantidadHoy != null ? { cantidadHoy: opts.cantidadHoy } : undefined,
       forzarCompleto: opts?.forzarCompleto ?? undefined,
     };
@@ -145,7 +212,6 @@ export function NuevaOrdenClient() {
     setSubmitting(false);
 
     if (res.status === 409 && typeof data.minimo === "string") {
-      // Overlap: el backend nos manda el mínimo y nosotros saltamos el inicio.
       const min = new Date(data.minimo);
       setInicioFecha(toYMD(min));
       setInicioHora(toHHMM(min));
@@ -170,14 +236,6 @@ export function NuevaOrdenClient() {
     }
     router.push("/dashboard/ordenes");
   };
-
-  const puedeGuardar =
-    !!articulo &&
-    !!cantidad &&
-    Number(cantidad) > 0 &&
-    !!inicioISO &&
-    !inicioTooEarly &&
-    (tipo !== "PINTURA" || !!color || !!articulo?.color);
 
   return (
     <section className="mx-auto w-full max-w-2xl p-6">
@@ -283,6 +341,196 @@ export function NuevaOrdenClient() {
           </div>
         )}
 
+        {/* Sección de Transición con la OT anterior si existe */}
+        {sugerencia?.ordenAnterior && (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-5 space-y-4">
+            <div className="flex items-start gap-2.5 border-b border-slate-200 pb-3">
+              <Clock className="h-5 w-5 text-indigo-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-bold text-slate-800">
+                  Transición desde la OT anterior #{sugerencia.ordenAnterior.numero}
+                </p>
+                <p className="text-xs text-slate-500">
+                  {sugerencia.ordenAnterior.tipo === "PINTURA" ? "Pintura" : "Lavado"}
+                  {sugerencia.ordenAnterior.codigo ? ` · ${sugerencia.ordenAnterior.codigo}` : ""}
+                  {sugerencia.ordenAnterior.color ? ` · Color: ${sugerencia.ordenAnterior.color}` : ""}
+                  {" · "}Finaliza: <b>{formatFechaHora(new Date(sugerencia.ordenAnterior.finTeorico))}</b>
+                </p>
+              </div>
+            </div>
+
+            {/* Pregunta 1: Cambio de ganchera */}
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-semibold text-slate-700">
+                  ¿Requiere cambio de ganchera?
+                </span>
+                <div className="inline-flex rounded-lg border border-slate-300 p-0.5 bg-white">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRequiereGanchera(false);
+                      setMinutosGanchera("");
+                    }}
+                    className={
+                      "px-4 py-1.5 text-xs font-bold rounded-md transition-all " +
+                      (requiereGanchera === false
+                        ? "bg-slate-800 text-white shadow-sm"
+                        : "text-slate-600 hover:text-slate-900")
+                    }
+                  >
+                    No
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRequiereGanchera(true)}
+                    className={
+                      "px-4 py-1.5 text-xs font-bold rounded-md transition-all " +
+                      (requiereGanchera === true
+                        ? "bg-indigo-600 text-white shadow-sm"
+                        : "text-slate-600 hover:text-slate-900")
+                    }
+                  >
+                    Sí
+                  </button>
+                </div>
+              </div>
+
+              {requiereGanchera === true && (
+                <div className="mt-2.5 flex items-center justify-between gap-3 bg-white border border-indigo-200 rounded-xl p-3 shadow-sm">
+                  <label className="text-xs font-medium text-slate-700">
+                    ¿Cuántos minutos le asignás al cambio de ganchera?
+                  </label>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <Input
+                      type="number"
+                      min="1"
+                      placeholder="0"
+                      value={minutosGanchera}
+                      onChange={(e) => setMinutosGanchera(e.target.value.replace(/\D/g, ""))}
+                      className="w-20 h-9 text-center font-bold text-sm"
+                    />
+                    <span className="text-xs text-slate-500 font-medium">min</span>
+                  </div>
+                </div>
+              )}
+              {requiereGanchera === false && (
+                <p className="mt-1.5 text-xs text-emerald-700 font-medium">
+                  ✓ 0 min — Continúa con las mismas gancheras de la línea.
+                </p>
+              )}
+            </div>
+
+            {/* Pregunta 2: Cambio de color / Preparación de cabina */}
+            {aplicaColor && (
+              <div className="border-t border-slate-200 pt-3">
+                {/* Banner contextual de color */}
+                {sugerencia.ordenAnterior.tipo === "PINTURA" && tipo === "PINTURA" && (
+                  color && sugerencia.ordenAnterior.color &&
+                  color.trim().toLowerCase() !== sugerencia.ordenAnterior.color.trim().toLowerCase() ? (
+                    <div className="text-xs text-amber-800 font-semibold mb-2 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+                      ⚠️ Cambio de color detectado: de <b>{sugerencia.ordenAnterior.color}</b> a <b>{color}</b>.
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-500 mb-2">
+                      Mismo color ({color || sugerencia.ordenAnterior.color}).
+                    </p>
+                  )
+                )}
+
+                {sugerencia.ordenAnterior.tipo === "LAVADO" && tipo === "PINTURA" && (
+                  <div className="text-xs text-indigo-800 font-medium mb-2 bg-indigo-50 border border-indigo-200 rounded-lg p-2.5">
+                    ℹ️ Transición de Lavado a Pintura (revisar cabina de pintura).
+                  </div>
+                )}
+
+                {sugerencia.ordenAnterior.tipo === "PINTURA" && tipo === "LAVADO" && (
+                  <div className="text-xs text-indigo-800 font-medium mb-2 bg-indigo-50 border border-indigo-200 rounded-lg p-2.5">
+                    ℹ️ Transición de Pintura a Lavado (revisar cabina / limpieza).
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-semibold text-slate-700">
+                    ¿Requiere cambio de color o preparación de cabina?
+                  </span>
+                  <div className="inline-flex rounded-lg border border-slate-300 p-0.5 bg-white">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRequiereColor(false);
+                        setMinutosColor("");
+                      }}
+                      className={
+                        "px-4 py-1.5 text-xs font-bold rounded-md transition-all " +
+                        (requiereColor === false
+                          ? "bg-slate-800 text-white shadow-sm"
+                          : "text-slate-600 hover:text-slate-900")
+                      }
+                    >
+                      No
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRequiereColor(true)}
+                      className={
+                        "px-4 py-1.5 text-xs font-bold rounded-md transition-all " +
+                        (requiereColor === true
+                          ? "bg-indigo-600 text-white shadow-sm"
+                          : "text-slate-600 hover:text-slate-900")
+                      }
+                    >
+                      Sí
+                    </button>
+                  </div>
+                </div>
+
+                {requiereColor === true && (
+                  <div className="mt-2.5 flex items-center justify-between gap-3 bg-white border border-indigo-200 rounded-xl p-3 shadow-sm">
+                    <label className="text-xs font-medium text-slate-700">
+                      ¿Cuántos minutos le asignás al cambio de color / cabina?
+                    </label>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <Input
+                        type="number"
+                        min="1"
+                        placeholder="0"
+                        value={minutosColor}
+                        onChange={(e) => setMinutosColor(e.target.value.replace(/\D/g, ""))}
+                        className="w-20 h-9 text-center font-bold text-sm"
+                      />
+                      <span className="text-xs text-slate-500 font-medium">min</span>
+                    </div>
+                  </div>
+                )}
+                {requiereColor === false && (
+                  <p className="mt-1.5 text-xs text-emerald-700 font-medium">
+                    ✓ 0 min — Sin tiempo de cambio de color / cabina.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Resumen de la transición */}
+            <div className="border-t border-slate-200 pt-2.5">
+              {totalGapMin === 0 && requiereGanchera === false && (!aplicaColor || requiereColor === false) && (
+                <p className="text-xs text-emerald-800 font-semibold">
+                  🟢 <b>Inmediato:</b> La orden arrancará inmediatamente al finalizar la OT #{sugerencia.ordenAnterior.numero} sin pausas.
+                </p>
+              )}
+              {totalGapMin > 0 && (
+                <p className="text-xs text-indigo-900 font-semibold">
+                  ⏱️ <b>Tiempo de transición:</b> {totalGapMin} min total
+                  {gancheraMin > 0 ? ` (${gancheraMin} min gancheras` : ""}
+                  {gancheraMin > 0 && colorMin > 0 ? ` + ${colorMin} min color/cabina` : ""}
+                  {gancheraMin === 0 && colorMin > 0 ? ` (${colorMin} min color/cabina` : ""}
+                  {")"}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="border-t border-slate-200 pt-5">
           <p className="text-sm font-medium text-slate-700 mb-2">Horario de inicio</p>
           <div className="grid grid-cols-2 gap-3">
@@ -300,15 +548,15 @@ export function NuevaOrdenClient() {
             />
           </div>
 
-          {sugerencia && <SugerenciaInfo sugerencia={sugerencia} />}
+          {sugerencia && <SugerenciaInfo sugerencia={sugerencia} totalGapMin={totalGapMin} />}
 
-          {inicioTooEarly && sugerencia && (
+          {inicioTooEarly && sugerencia?.ordenAnterior && (
             <div className="mt-3 flex items-start gap-2 rounded-xl bg-red-50 border border-red-200 p-3">
               <AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
               <p className="text-sm text-red-800">
                 No podés iniciar antes de las{" "}
-                <b>{formatFechaHora(new Date(sugerencia.minimo))}</b> (se solaparía con la OT
-                anterior). Podés empujarlo más tarde si querés dejar un hueco.
+                <b>{formatFechaHora(new Date(sugerencia.ordenAnterior.finTeorico))}</b> porque la OT
+                #{sugerencia.ordenAnterior.numero} todavía estará en curso.
               </p>
             </div>
           )}
@@ -318,19 +566,27 @@ export function NuevaOrdenClient() {
           </p>
         </div>
 
-        <div className="flex justify-end gap-3 pt-2">
-          <Button variant="outline" onClick={() => router.push("/dashboard/ordenes")}>
-            Cancelar
-          </Button>
-          <Button
-            onClick={() => guardar()}
-            disabled={!puedeGuardar || submitting}
-            className="bg-[#1627b1] text-white"
-            size="lg"
-          >
-            <Check className="h-5 w-5 mr-2" />
-            {submitting ? "Guardando…" : "Crear OT"}
-          </Button>
+        <div className="flex flex-col sm:flex-row items-end sm:items-center justify-between gap-3 pt-2">
+          <div className="text-xs text-amber-700 font-medium">
+            {pendienteGanchera && "⚠️ Indicá si requiere cambio de ganchera arriba."}
+            {!pendienteGanchera && requiereGanchera === true && (!minutosGanchera || Number(minutosGanchera) <= 0) && "⚠️ Ingresá los minutos para el cambio de ganchera."}
+            {!pendienteGanchera && (!requiereGanchera || Number(minutosGanchera) > 0) && pendienteColor && "⚠️ Indicá si requiere cambio de color / cabina arriba."}
+            {!pendienteGanchera && (!requiereGanchera || Number(minutosGanchera) > 0) && !pendienteColor && requiereColor === true && (!minutosColor || Number(minutosColor) <= 0) && "⚠️ Ingresá los minutos para el cambio de color."}
+          </div>
+          <div className="flex gap-3">
+            <Button variant="outline" onClick={() => router.push("/dashboard/ordenes")}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => guardar()}
+              disabled={!puedeGuardar || submitting}
+              className="bg-[#1627b1] text-white"
+              size="lg"
+            >
+              <Check className="h-5 w-5 mr-2" />
+              {submitting ? "Guardando…" : "Crear OT"}
+            </Button>
+          </div>
         </div>
 
         {error && <p className="text-red-600 font-medium">{error}</p>}
@@ -358,7 +614,13 @@ export function NuevaOrdenClient() {
 // Info de la sugerencia de horario
 // =============================================================================
 
-function SugerenciaInfo({ sugerencia }: { sugerencia: Sugerencia }) {
+function SugerenciaInfo({
+  sugerencia,
+  totalGapMin,
+}: {
+  sugerencia: Sugerencia;
+  totalGapMin: number;
+}) {
   if (sugerencia.razon === "sin_orden_previa") {
     return (
       <p className="mt-2 text-xs text-slate-500">
@@ -367,12 +629,11 @@ function SugerenciaInfo({ sugerencia }: { sugerencia: Sugerencia }) {
     );
   }
   const prev = sugerencia.ordenAnterior;
-  const gapMin = Math.round(sugerencia.gapSeg / 60);
-  const motivo = sugerencia.razon === "cambio_color" ? "cambio de color (+30)" : "cambio de gancheras";
   return (
     <p className="mt-2 text-xs text-slate-600">
       Sugerido: <b>{formatFechaHora(new Date(sugerencia.sugerido))}</b> ={" "}
-      fin de OT #{prev?.numero} ({formatFechaHora(new Date(prev!.finTeorico))}) + {gapMin} min ({motivo}).
+      fin de OT #{prev?.numero} ({formatFechaHora(new Date(prev!.finTeorico))})
+      {totalGapMin > 0 ? ` + ${totalGapMin} min de preparación/transición.` : " (sin tiempo de espera)."}
     </p>
   );
 }

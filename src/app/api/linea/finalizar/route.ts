@@ -210,22 +210,28 @@ export async function POST(req: NextRequest) {
     const pendientes = await tx.ordenTrabajo.findMany({
       where: { estado: "PENDIENTE" },
       orderBy: { inicioProgramado: "asc" },
-      select: { id: true, tipo: true, color: true, inicioTeorico: true, finTeorico: true },
+      select: {
+        id: true,
+        tipo: true,
+        color: true,
+        inicioTeorico: true,
+        finTeorico: true,
+        minutosGanchera: true,
+        minutosColor: true,
+      },
     });
 
     if (pendientes.length > 0) {
-      // Gap entre la OT recién finalizada y la primera pendiente (puede ser +45
-      // si cambia color). Se baja al ancla porque reencadenarEnJornada no aplica
-      // gap antes del primer ítem.
-      const primeraGapSeg = tiempoCambioSeg(
-        { tipo: orden.tipo, color: orden.color },
-        { tipo: pendientes[0].tipo, color: pendientes[0].color },
-      );
+      // Gap entre la OT recién finalizada y la primera pendiente respetando
+      // los minutos que el usuario asignó para ganchera y color/cabina.
+      const primeraGapSeg =
+        ((pendientes[0].minutosGanchera ?? 0) + (pendientes[0].minutosColor ?? 0)) * 60;
       const ancla = ceilAMinuto(new Date(now.getTime() + primeraGapSeg * 1000));
 
       const items: ItemReencadenable[] = pendientes.map((p) => ({
         tipo: p.tipo,
         color: p.color,
+        gapSeg: ((p.minutosGanchera ?? 0) + (p.minutosColor ?? 0)) * 60,
         duracionSeg: Math.round((p.finTeorico.getTime() - p.inicioTeorico.getTime()) / 1000),
       }));
 

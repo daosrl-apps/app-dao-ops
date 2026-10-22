@@ -107,6 +107,21 @@ describe("reencadenar", () => {
     );
   });
 
+  it("respeta gapSeg personalizado si está definido (ej: 0 s sin gap, o 600 s)", () => {
+    const items: ItemReencadenable[] = [
+      { tipo: "PINTURA", color: "Rojo", duracionSeg: HORA },
+      { tipo: "PINTURA", color: "Azul", duracionSeg: HORA, gapSeg: 0 },
+      { tipo: "LAVADO", color: "", duracionSeg: HORA, gapSeg: 600 },
+    ];
+    const r = reencadenar(items, t0);
+    // OT 1 arranca en t0
+    expect(r[0].inicio.getTime()).toBe(t0.getTime());
+    // OT 2 arranca inmediatamente pegada a OT 1 (gapSeg = 0)
+    expect(r[1].inicio.getTime()).toBe(r[0].fin.getTime());
+    // OT 3 arranca con 600 s de gap
+    expect(r[2].inicio.getTime()).toBe(r[1].fin.getTime() + 600 * 1000);
+  });
+
   it("lista vacía devuelve []", () => {
     expect(reencadenar([], t0)).toEqual([]);
   });

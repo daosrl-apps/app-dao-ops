@@ -170,6 +170,10 @@ model OrdenTrabajo {
   /// Snapshot de configPerchas del Articulo al crear la OT (para no perder
   /// trazabilidad si después se edita el maestro).
   configPerchas      String?
+  /// Minutos asignados para cambio de gancheras antes de iniciar esta OT (0 si no requirió cambio).
+  minutosGanchera    Int         @default(0)
+  /// Minutos asignados para cambio de color o preparación de cabina (0 si no requirió cambio).
+  minutosColor       Int         @default(0)
   estado             OrdenEstado @default(PENDIENTE)
   /// Observaciones / justificación. Se completa, p. ej., cuando al finalizar la
   /// OT el tiempo real se desvía más de ±20% del teórico (justificación

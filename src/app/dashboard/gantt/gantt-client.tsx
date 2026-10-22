@@ -20,6 +20,8 @@ export interface GanttOT {
   finReal: string | null;
   /** Pausas cerradas (segmentos grises sobre la barra real). */
   pausas: { inicio: string; fin: string }[];
+  minutosGanchera?: number;
+  minutosColor?: number;
 }
 
 const ROW_H = 52;

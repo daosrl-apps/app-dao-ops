@@ -47,6 +47,8 @@ export default async function GanttPage() {
     finReal: o.finReal?.toISOString() ?? null,
     // Pausas cerradas (segmentos grises sobre la barra real).
     pausas: o.pausas.map((p) => ({ inicio: p.inicio.toISOString(), fin: p.fin!.toISOString() })),
+    minutosGanchera: o.minutosGanchera,
+    minutosColor: o.minutosColor,
   }));
 
   return (

@@ -39,6 +39,8 @@ export async function PUT(req: NextRequest) {
       inicioProgramado: true,
       inicioTeorico: true,
       finTeorico: true,
+      minutosGanchera: true,
+      minutosColor: true,
     },
   });
 
@@ -62,6 +64,7 @@ export async function PUT(req: NextRequest) {
   const items: ItemReencadenable[] = ordenadas.map((o) => ({
     tipo: o.tipo,
     color: o.color,
+    gapSeg: ((o.minutosGanchera ?? 0) + (o.minutosColor ?? 0)) * 60,
     duracionSeg: Math.round((o.finTeorico.getTime() - o.inicioTeorico.getTime()) / 1000),
   }));
 
