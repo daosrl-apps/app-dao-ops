@@ -20,6 +20,39 @@ describe("procesarCsvArticulos — mapeo por encabezado", () => {
     expect(f.color).toBe("Negro");
     expect(f.colorRevisar).toBe(false);
   });
+
+  it("detecta el header cuando viene precedido por metadatos (ej. Fecha y Hora) y extrae color de la descripción", () => {
+    const preambulo = "Fecha: 01/09/26 Hora: 11:09:29,,,,,,,,";
+    const fila1 = "1,AXEL,FLEJE CORTO CN NEGRO,0.126,0.5,50,400,1.68,480";
+    const fila2 = "8,AXEL,MUEBLE SECARROPA BLANCO,1.36,3,50,67,1.68,80";
+    const csv = `${preambulo}\n${HEADER}\n${fila1}\n${fila2}`;
+
+    const r = procesarCsvArticulos(csv);
+    expect(r.filasOk).toBe(2);
+    expect(r.filasError).toBe(0);
+    expect(r.totalFilas).toBe(2);
+
+    expect(r.filas[0].codigo).toBe("1");
+    expect(r.filas[0].cliente).toBe("AXEL");
+    expect(r.filas[0].descripcion).toBe("FLEJE CORTO CN NEGRO");
+    expect(r.filas[0].color).toBe("Negro");
+    expect(r.filas[0].colorRevisar).toBe(false);
+
+    expect(r.filas[1].codigo).toBe("8");
+    expect(r.filas[1].cliente).toBe("AXEL");
+    expect(r.filas[1].color).toBe("Blanco");
+    expect(r.filas[1].colorRevisar).toBe(false);
+  });
+
+  it("tolera caracteres de reemplazo unicode en el header", () => {
+    const headerConReemplazo =
+      "Art\ufffdculo,Cliente,Descripci\ufffdn,Superficie,Perchas,Tiempo x vuelta (min.),Piezas x vuelta,Vel. l\ufffdnea (mts. x min.),Piezas x hora";
+    const csv = `${headerConReemplazo}\n2,AXEL,TAPA CN DELANTERA NEGRO,0.456,1,50,200,1.68,240`;
+    const r = procesarCsvArticulos(csv);
+    expect(r.filasOk).toBe(1);
+    expect(r.filas[0].codigo).toBe("2");
+    expect(r.filas[0].color).toBe("Negro");
+  });
 });
 
 describe("procesarCsvArticulos — orden fijo sin header", () => {

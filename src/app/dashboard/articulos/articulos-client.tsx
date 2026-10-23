@@ -401,40 +401,57 @@ function ImportarCsv({ onDone }: { onDone: () => void }) {
   const [error, setError] = React.useState<string | null>(null);
 
   const onFile = async (file: File) => {
-    const text = await file.text();
-    setCsvText(text);
-    setNombreArchivo(file.name);
-    setConfirmed(null);
-    setError(null);
-    setSubmitting(true);
-    const res = await fetch("/api/admin/articulos/import", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ csv: text, nombreArchivo: file.name }),
-    });
-    setSubmitting(false);
-    if (!res.ok) {
-      setError("No se pudo procesar el archivo.");
-      return;
+    try {
+      const buffer = await file.arrayBuffer();
+      // Detectar codificación: decodificar como UTF-8 y si contiene caracteres de reemplazo (\uFFFD), usar Windows-1252
+      let text = new TextDecoder("utf-8").decode(buffer);
+      if (text.includes("\uFFFD")) {
+        text = new TextDecoder("windows-1252").decode(buffer);
+      }
+      setCsvText(text);
+      setNombreArchivo(file.name);
+      setConfirmed(null);
+      setError(null);
+      setSubmitting(true);
+      const res = await fetch("/api/admin/articulos/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ csv: text, nombreArchivo: file.name }),
+      });
+      setSubmitting(false);
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setError(data?.error || `Error ${res.status}: No se pudo procesar el archivo.`);
+        return;
+      }
+      setPreview((await res.json()) as PreviewResp);
+    } catch (err: unknown) {
+      setSubmitting(false);
+      setError(err instanceof Error ? err.message : "Error al leer el archivo.");
     }
-    setPreview((await res.json()) as PreviewResp);
   };
 
   const confirmar = async () => {
     if (!csvText) return;
     setSubmitting(true);
     setError(null);
-    const res = await fetch("/api/admin/articulos/import", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ csv: csvText, nombreArchivo, confirm: true }),
-    });
-    setSubmitting(false);
-    if (!res.ok) {
-      setError("No se pudo aplicar la importación.");
-      return;
+    try {
+      const res = await fetch("/api/admin/articulos/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ csv: csvText, nombreArchivo, confirm: true }),
+      });
+      setSubmitting(false);
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setError(data?.error || `Error ${res.status}: No se pudo aplicar la importación.`);
+        return;
+      }
+      setConfirmed((await res.json()) as ConfirmResp);
+    } catch (err: unknown) {
+      setSubmitting(false);
+      setError(err instanceof Error ? err.message : "Error al confirmar la importación.");
     }
-    setConfirmed((await res.json()) as ConfirmResp);
   };
 
   return (

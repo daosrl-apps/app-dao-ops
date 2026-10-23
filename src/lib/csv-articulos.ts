@@ -68,41 +68,50 @@ export interface ProcesoCsvResult {
 function norm(s: string): string {
   return s
     .toLowerCase()
+    .replace(/\ufffd/g, "")
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 }
 
 /**
- * Detecta si la primera fila es un encabezado y devuelve el mapeo
- * campo → índice de columna. Si no hay encabezado, devuelve los índices fijos.
+ * Busca la fila de encabezado en las primeras filas del archivo (útil si viene precedida
+ * por metadatos como "Fecha: ... Hora: ...").
+ * Devuelve el índice de la fila del encabezado y el mapeo de columnas.
+ * Si no encuentra encabezado, devuelve headerIndex = -1 y el orden fijo canónico.
  */
-function resolverColumnas(primeraFila: string[]): {
-  tieneHeader: boolean;
+function encontrarHeader(rows: string[][]): {
+  headerIndex: number;
   map: Record<CampoCsv, number>;
 } {
-  const celdas = primeraFila.map(norm);
-  const esHeader = celdas.some(
-    (c) => c.includes("articulo") || c.includes("cliente") || c.includes("piezas"),
-  );
-  if (!esHeader) {
-    return { tieneHeader: false, map: { ...FIJO } };
+  const limite = Math.min(rows.length, 15);
+  for (let idx = 0; idx < limite; idx++) {
+    const celdas = rows[idx].map(norm);
+    const esHeader = celdas.some(
+      (c) =>
+        c.includes("articulo") ||
+        c.includes("cliente") ||
+        (c.includes("piezas") && c.includes("hora")),
+    );
+    if (esHeader) {
+      const map: Record<CampoCsv, number> = { ...FIJO };
+      celdas.forEach((c, colIdx) => {
+        if (c.includes("articulo")) map.codigo = colIdx;
+        else if (c.includes("cliente")) map.cliente = colIdx;
+        else if (c.includes("descripcion")) map.descripcion = colIdx;
+        else if (c.includes("superficie")) map.superficie = colIdx;
+        else if (c.includes("piezas") && c.includes("hora")) map.piezasHora = colIdx;
+        else if (c.includes("piezas") && c.includes("vuelta")) map.piezasVuelta = colIdx;
+        else if (c.includes("tiempo") && c.includes("vuelta")) map.tiempoVuelta = colIdx;
+        else if (c.includes("vel") && c.includes("linea")) map.velLinea = colIdx;
+        else if (c.includes("percha")) map.perchas = colIdx;
+      });
+      return { headerIndex: idx, map };
+    }
   }
 
-  const map: Record<CampoCsv, number> = { ...FIJO };
-  celdas.forEach((c, idx) => {
-    if (c.includes("articulo")) map.codigo = idx;
-    else if (c.includes("cliente")) map.cliente = idx;
-    else if (c.includes("descripcion")) map.descripcion = idx;
-    else if (c.includes("superficie")) map.superficie = idx;
-    else if (c.includes("piezas") && c.includes("hora")) map.piezasHora = idx;
-    else if (c.includes("piezas") && c.includes("vuelta")) map.piezasVuelta = idx;
-    else if (c.includes("tiempo") && c.includes("vuelta")) map.tiempoVuelta = idx;
-    else if (c.includes("vel") && c.includes("linea")) map.velLinea = idx;
-    else if (c.includes("percha")) map.perchas = idx;
-  });
-  return { tieneHeader: true, map };
+  return { headerIndex: -1, map: { ...FIJO } };
 }
 
 function numOpcional(raw: string): number | null {
@@ -124,14 +133,18 @@ export function procesarCsvArticulos(csvText: string): ProcesoCsvResult {
     return { totalFilas: 0, filasOk: 0, filasError: 0, articulosSinColor: 0, filas, errores };
   }
 
-  const { tieneHeader, map } = resolverColumnas(rows[0]);
-  const start = tieneHeader ? 1 : 0;
+  const { headerIndex, map } = encontrarHeader(rows);
+  const start = headerIndex >= 0 ? headerIndex + 1 : 0;
   const cell = (r: string[], campo: CampoCsv) => (r[map[campo]] ?? "").trim();
 
   let articulosSinColor = 0;
   for (let i = start; i < rows.length; i++) {
     const r = rows[i];
     const linea = i + 1;
+
+    // Fila completamente vacía → ignorar
+    if (!r.some((c) => c.trim().length > 0)) continue;
+
     const codigo = cell(r, "codigo");
     const cliente = cell(r, "cliente");
 
@@ -179,7 +192,9 @@ export function procesarCsvArticulos(csvText: string): ProcesoCsvResult {
       superficieM2 = s;
     }
 
-    const { color, revisar } = parseColor(codigo);
+    const descripcion = cell(r, "descripcion") || null;
+    const textoColor = [descripcion, codigo].filter(Boolean).join(" ");
+    const { color, revisar } = parseColor(textoColor);
     if (revisar) articulosSinColor++;
 
     filas.push({
