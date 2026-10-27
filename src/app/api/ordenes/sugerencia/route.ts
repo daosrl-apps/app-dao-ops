@@ -21,7 +21,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireSessionApi } from "@/lib/auth-guards";
-import { GAP_BASE_SEG, CAMBIO_COLOR_SEG, minimoInicio, ceilAMinuto } from "@/lib/schedule";
+import { ceilAMinuto } from "@/lib/schedule";
 
 export async function GET(req: NextRequest) {
   const auth = await requireSessionApi(["SUPERVISOR", "ADMIN"]);
@@ -31,9 +31,8 @@ export async function GET(req: NextRequest) {
   const tipo = searchParams.get("tipo");
   const color = (searchParams.get("color") ?? "").trim();
 
-  // "Última OT activa": tomamos la que tiene mayor finTeorico entre las que
-  // están PENDIENTE o EN_CURSO. La FINALIZADA no cuenta porque ya pasó.
-  const ultima = await prisma.ordenTrabajo.findFirst({
+  // 1. "Última OT activa": PENDIENTE o EN_CURSO (define el inicio mínimo no solapado)
+  const ultimaActiva = await prisma.ordenTrabajo.findFirst({
     where: { estado: { in: ["PENDIENTE", "EN_CURSO"] } },
     orderBy: { finTeorico: "desc" },
     select: {
@@ -42,6 +41,7 @@ export async function GET(req: NextRequest) {
       tipo: true,
       color: true,
       finTeorico: true,
+      estado: true,
       articulo: {
         select: {
           codigo: true,
@@ -51,8 +51,30 @@ export async function GET(req: NextRequest) {
     },
   });
 
+  // 2. Si no hay activa, buscamos la última registrada (ej. FINALIZADA) para saber qué artículo/color estuvo en línea
+  const ultima =
+    ultimaActiva ??
+    (await prisma.ordenTrabajo.findFirst({
+      orderBy: { finTeorico: "desc" },
+      select: {
+        id: true,
+        numero: true,
+        tipo: true,
+        color: true,
+        finTeorico: true,
+        estado: true,
+        articulo: {
+          select: {
+            codigo: true,
+            descripcion: true,
+          },
+        },
+      },
+    }));
+
+  const now = new Date();
+
   if (!ultima) {
-    const now = new Date();
     return NextResponse.json({
       sugerido: now.toISOString(),
       minimo: now.toISOString(),
@@ -62,20 +84,22 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  // Base mínima sin solaparse: fin teórico de la anterior redondeado al minuto
-  const minimo = ceilAMinuto(ultima.finTeorico);
+  const esActiva = !!ultimaActiva;
+  const minimo = esActiva ? ceilAMinuto(ultimaActiva.finTeorico) : now;
 
   return NextResponse.json({
     sugerido: minimo.toISOString(),
     minimo: minimo.toISOString(),
     gapSeg: 0,
-    razon: "con_orden_previa",
+    razon: esActiva ? "con_orden_previa" : "sin_orden_activa",
     ordenAnterior: {
       id: ultima.id,
       numero: ultima.numero,
       finTeorico: ultima.finTeorico.toISOString(),
       color: ultima.color,
       tipo: ultima.tipo,
+      estado: ultima.estado,
+      esActiva,
       codigo: ultima.articulo?.codigo ?? null,
       descripcion: ultima.articulo?.descripcion ?? null,
     },
