@@ -116,7 +116,7 @@ jobs:
             docker compose -f compose.yaml -f compose.prod.yaml run --rm -T web \
               npx tsx prisma/seed.ts < /dev/null || echo "    warn: seed falló, continuando"
 
-            # Asegurar certbot y certificado Let's Encrypt para planta.daosrl.com.ar
+            # Asegurar certbot y certificado inicial para planta.daosrl.com.ar si no existe aún
             if [ ! -d "/etc/letsencrypt/live/planta.daosrl.com.ar" ]; then
               echo "==> Instalando Certbot y emitiendo certificado SSL Let's Encrypt para planta.daosrl.com.ar..."
               apt-get update -y && apt-get install -y certbot || true
@@ -125,8 +125,29 @@ jobs:
               docker start dao-metricas-nginx 2>/dev/null || true
             fi
 
+            mkdir -p /var/www/certbot
+            chmod 755 /var/www/certbot
+
             echo "==> Bring services up (force-recreate web y nginx)"
             docker compose -f compose.yaml -f compose.prod.yaml up -d --force-recreate web nginx
+            sleep 2
+
+            echo "==> Renovar certificados SSL vencidos o próximos a vencer (webroot) y configurar recarga automática"
+            if ! command -v certbot >/dev/null 2>&1; then
+              apt-get update -y && apt-get install -y certbot || true
+            fi
+            mkdir -p /etc/letsencrypt/renewal-hooks/deploy
+            printf '%s\n' '#!/bin/sh' 'docker compose -f /opt/docker/app-dao-ops/compose.yaml -f /opt/docker/app-dao-ops/compose.prod.yaml exec -T nginx nginx -s reload 2>/dev/null || docker restart app-dao-ops-nginx-1 2>/dev/null || true' > /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
+            chmod +x /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
+
+            for domain in planta.daosrl.com.ar 3dceci.daosrl.com.ar metricas.daosrl.com.ar comidas.daosrl.com.ar; do
+              echo "--> Verificando SSL para $domain..."
+              certbot certonly --webroot -w /var/www/certbot -d "$domain" --non-interactive --agree-tos --register-unsafely-without-email --keep-until-expiring || echo "    warn: certbot falló para $domain"
+            done
+
+            systemctl enable --now certbot.timer 2>/dev/null || true
+            docker compose -f compose.yaml -f compose.prod.yaml exec -T nginx nginx -s reload || true
+            certbot certificates || true
 
             echo "==> Esperar healthcheck"
             for i in 1 2 3 4 5 6 7 8 9 10; do
