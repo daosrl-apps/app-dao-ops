@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { procesarCsvArticulos } from "@/lib/csv-articulos";
+import { procesarCsvArticulos, normalizarCodigoArticulo } from "@/lib/csv-articulos";
 
 const HEADER =
   "Artículo,Cliente,Descripción,Superficie,Perchas,Tiempo x vuelta (min.),Piezas x vuelta,Vel. línea (mts. x min.),Piezas x hora";
@@ -99,5 +99,18 @@ describe("procesarCsvArticulos — validaciones de fila", () => {
     // Campos opcionales vacíos => null.
     expect(r.filas[0].descripcion).toBeNull();
     expect(r.filas[0].superficieM2).toBeNull();
+  });
+
+  it("normaliza códigos numéricos con ceros a la izquierda (000017 -> 17) y evita duplicados", () => {
+    expect(normalizarCodigoArticulo("000017")).toBe("17");
+    expect(normalizarCodigoArticulo("000019")).toBe("19");
+    expect(normalizarCodigoArticulo("17")).toBe("17");
+
+    const csv = `${HEADER}\n000017,AXEL,FRENTE DE HORNO NEGRO,0.4,1,50,100,1.68,120\n17,AXEL,FRENTE DE HORNO NEGRO,0.4,2,50,150,1.68,180`;
+    const r = procesarCsvArticulos(csv);
+    expect(r.filasOk).toBe(1);
+    expect(r.filas[0].codigo).toBe("17");
+    expect(r.filas[0].perchas).toBe(2);
+    expect(r.filas[0].piezasPorHora).toBe(180);
   });
 });

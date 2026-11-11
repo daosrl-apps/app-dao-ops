@@ -32,7 +32,16 @@ export interface OrdenView {
   inicioReal: string | null;
   finReal: string | null;
   creadoPor: string;
-  articulo: { codigo: string; descripcion: string | null; cliente: string };
+  piezasPorPercha?: number | null;
+  velocidadLavado?: number | null;
+  articulo: {
+    codigo: string;
+    descripcion: string | null;
+    cliente: string;
+    piezasPorVuelta?: number | null;
+    velLineaMtsMin?: number | null;
+    piezasPorHora?: number | null;
+  };
   esContinuacion: boolean;
 }
 
@@ -337,7 +346,19 @@ function OrdenRow({
           </p>
           <p className="text-sm text-slate-600">
             <b>{o.articulo.cliente}</b> · {o.cantidad} pzs
-            {o.tipo === "PINTURA" && ` · ${o.color}`}
+            {o.tipo === "PINTURA" && (
+              <>
+                {` · ${o.color}`}
+                {o.articulo.piezasPorVuelta != null && ` · ${o.articulo.piezasPorVuelta} pzs/vuelta`}
+                {o.articulo.velLineaMtsMin != null && ` · ${o.articulo.velLineaMtsMin} m/min`}
+                {o.articulo.piezasPorHora != null &&
+                  ` · ${Math.round(o.articulo.piezasPorHora * 10) / 10} pzs/h`}
+              </>
+            )}
+            {o.tipo === "LAVADO" &&
+              o.piezasPorPercha != null &&
+              o.velocidadLavado != null &&
+              ` · ${o.piezasPorPercha}/percha · ${o.velocidadLavado} m/min`}
           </p>
           {o.finReal ? (
             <p className="text-sm font-medium text-slate-700">

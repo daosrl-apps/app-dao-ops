@@ -19,6 +19,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireSessionApi } from "@/lib/auth-guards";
 import { procesarCsvArticulos } from "@/lib/csv-articulos";
+import { deduplicarArticulosConCeros } from "@/lib/articulos-dedup";
 import { registrarAuditoria } from "@/lib/auditoria";
 
 const Body = z.object({
@@ -51,6 +52,9 @@ export async function POST(req: NextRequest) {
       errores: proceso.errores.slice(0, 50),
     });
   }
+
+  // Antes de upsertear, normalizamos/unificamos cualquier código con ceros a la izquierda existente
+  await deduplicarArticulosConCeros(prisma, true);
 
   // Confirm: aplicar upsert. Cacheamos cliente.nombre → id para no consultar
   // por cada fila.

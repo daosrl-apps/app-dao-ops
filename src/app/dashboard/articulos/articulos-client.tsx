@@ -71,8 +71,15 @@ export function ArticulosClient() {
 // Lista de artículos
 // =============================================================================
 
+interface ClienteItem {
+  id: string;
+  nombre: string;
+}
+
 function ListaArticulos() {
   const [items, setItems] = React.useState<Articulo[]>([]);
+  const [clientes, setClientes] = React.useState<ClienteItem[]>([]);
+  const [clienteId, setClienteId] = React.useState("");
   const [q, setQ] = React.useState("");
   const [loading, setLoading] = React.useState(true);
   const [editMode, setEditMode] = React.useState(false);
@@ -81,12 +88,16 @@ function ListaArticulos() {
   const reload = React.useCallback(async () => {
     setLoading(true);
     const params = new URLSearchParams();
-    if (q) params.set("q", q);
+    if (q.trim()) params.set("q", q.trim());
+    if (clienteId) params.set("clienteId", clienteId);
     const res = await fetch(`/api/admin/articulos?${params}`);
     const data = await res.json();
     setItems(data.articulos ?? []);
+    if (Array.isArray(data.clientes)) {
+      setClientes(data.clientes);
+    }
     setLoading(false);
-  }, [q]);
+  }, [q, clienteId]);
 
   React.useEffect(() => {
     const t = setTimeout(reload, 200);
@@ -96,15 +107,45 @@ function ListaArticulos() {
   return (
     <>
       <div className="flex flex-wrap items-center gap-3 mb-4">
+        <div className="min-w-[200px] sm:min-w-[240px]">
+          <select
+            value={clienteId}
+            onChange={(e) => setClienteId(e.target.value)}
+            aria-label="Filtrar por cliente"
+            className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 focus:border-[#1627b1] focus:outline-none"
+          >
+            <option value="">Todos los clientes ({clientes.length})</option>
+            {clientes.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.nombre}
+              </option>
+            ))}
+          </select>
+        </div>
         <div className="relative flex-1 min-w-[220px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
           <Input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Buscar por código o descripción"
+            placeholder="Buscar por artículo (código o descripción) o cliente..."
             className="pl-10"
           />
         </div>
+        {(clienteId || q) && (
+          <Button
+            variant="outline"
+            onClick={() => {
+              setClienteId("");
+              setQ("");
+            }}
+            className="text-slate-600"
+          >
+            <X className="h-4 w-4 mr-1" /> Limpiar filtros
+          </Button>
+        )}
+        <span className="text-xs font-semibold text-slate-500 px-2">
+          {loading ? "Cargando…" : `${items.length} artículo${items.length === 1 ? "" : "s"}`}
+        </span>
         <Button
           variant={editMode ? "default" : "outline"}
           onClick={() => setEditMode((v) => !v)}

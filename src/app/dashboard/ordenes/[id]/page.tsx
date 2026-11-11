@@ -86,7 +86,20 @@ export default async function OrdenDetailPage({
       </h1>
       <p className="text-lg text-slate-700 font-semibold mb-6">
         {ot.cantidad} piezas
-        {ot.tipo === "PINTURA" && ` · ${ot.color}`}
+        {ot.tipo === "PINTURA" && (
+          <>
+            {` · ${ot.color}`}
+            {ot.articulo.piezasPorVuelta != null && (
+              <> · {fmtNum(ot.articulo.piezasPorVuelta)} pzs/vuelta</>
+            )}
+            {ot.articulo.velLineaMtsMin != null && (
+              <> · {fmtNum(ot.articulo.velLineaMtsMin)} m/min</>
+            )}
+            {ot.articulo.piezasPorHora != null && (
+              <> · {fmtNum(ot.articulo.piezasPorHora, 1)} pzs/h</>
+            )}
+          </>
+        )}
         {ot.tipo === "LAVADO" && ot.piezasPorPercha != null && ot.velocidadLavado != null && (
           <> · {formatPiezasPorPercha(ot.piezasPorPercha)} · {ot.velocidadLavado} m/min</>
         )}
@@ -106,6 +119,62 @@ export default async function OrdenDetailPage({
           />
         </div>
       )}
+
+      <div className="rounded-2xl bg-white border border-slate-200 shadow-sm p-5 mb-4">
+        <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500 mb-4">
+          Parámetros del artículo ({ot.articulo.codigo})
+        </h2>
+        {isLavado ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            <ParamBox
+              label="Piezas por percha"
+              value={ot.piezasPorPercha != null ? formatPiezasPorPercha(ot.piezasPorPercha) : "—"}
+            />
+            <ParamBox
+              label="Velocidad de línea"
+              value={ot.velocidadLavado != null ? `${fmtNum(ot.velocidadLavado)} m/min` : "—"}
+            />
+            <ParamBox label="Cantidad OT" value={`${ot.cantidad} pzs`} />
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            <ParamBox
+              label="Piezas por vuelta"
+              value={
+                ot.articulo.piezasPorVuelta != null
+                  ? `${fmtNum(ot.articulo.piezasPorVuelta)} pzs`
+                  : "—"
+              }
+            />
+            <ParamBox
+              label="Velocidad de la línea"
+              value={
+                ot.articulo.velLineaMtsMin != null
+                  ? `${fmtNum(ot.articulo.velLineaMtsMin)} m/min`
+                  : "—"
+              }
+            />
+            <ParamBox
+              label="Piezas por hora"
+              value={
+                ot.articulo.piezasPorHora != null
+                  ? `${fmtNum(ot.articulo.piezasPorHora, 1)} pzs/h`
+                  : "—"
+              }
+            />
+            {ot.articulo.perchas != null && (
+              <ParamBox label="Perchas" value={fmtNum(ot.articulo.perchas)} />
+            )}
+            {ot.articulo.tiempoVueltaMin != null && (
+              <ParamBox
+                label="Tiempo por vuelta"
+                value={`${fmtNum(ot.articulo.tiempoVueltaMin)} min`}
+              />
+            )}
+            <ParamBox label="Color" value={ot.color || "—"} />
+          </div>
+        )}
+      </div>
 
       <div className="rounded-2xl bg-white border border-slate-200 shadow-sm p-5 mb-4">
         <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500 mb-4">Tiempos</h2>
@@ -260,4 +329,17 @@ function formatDelta(min: number): string {
 
 function formatDT(d: Date) {
   return formatFechaHora(d);
+}
+
+function fmtNum(v: number, maxFrac = 2) {
+  return v.toLocaleString("es-AR", { maximumFractionDigits: maxFrac });
+}
+
+function ParamBox({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl bg-slate-50 border border-slate-100 px-3.5 py-2.5">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="text-lg font-bold text-slate-900 tabular-nums mt-0.5">{value}</p>
+    </div>
+  );
 }

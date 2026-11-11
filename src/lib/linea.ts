@@ -27,7 +27,13 @@ export interface LineaOrden {
   duracionTeoricaSeg: number;
   inicioReal: string | null;
   finReal: string | null;
-  articulo: { codigo: string; descripcion: string | null };
+  articulo: {
+    codigo: string;
+    descripcion: string | null;
+    piezasPorVuelta: number | null;
+    velLineaMtsMin: number | null;
+    piezasPorHora: number;
+  };
   cliente: { nombre: string };
   /// Pausa actualmente abierta (sin `fin`), si hay.
   pausaActiva: { id: string; inicio: string } | null;
@@ -63,7 +69,14 @@ export interface LineaSnapshot {
 type PausaRow = { id: string; inicio: Date; fin: Date | null; duracionOverrideSeg: number | null };
 
 type OrdenRow = NonNullable<Awaited<ReturnType<typeof prisma.ordenTrabajo.findFirst>>> & {
-  articulo: { codigo: string; descripcion: string | null; cliente: { nombre: string } };
+  articulo: {
+    codigo: string;
+    descripcion: string | null;
+    piezasPorVuelta: number | null;
+    velLineaMtsMin: number | null;
+    piezasPorHora: number;
+    cliente: { nombre: string };
+  };
   pausas: PausaRow[];
 };
 
@@ -94,7 +107,13 @@ function shapeOrden(it: OrdenRow): LineaOrden {
     duracionTeoricaSeg: Math.round((it.finTeorico.getTime() - it.inicioTeorico.getTime()) / 1000),
     inicioReal: it.inicioReal?.toISOString() ?? null,
     finReal: it.finReal?.toISOString() ?? null,
-    articulo: { codigo: it.articulo.codigo, descripcion: it.articulo.descripcion },
+    articulo: {
+      codigo: it.articulo.codigo,
+      descripcion: it.articulo.descripcion,
+      piezasPorVuelta: it.articulo.piezasPorVuelta,
+      velLineaMtsMin: it.articulo.velLineaMtsMin,
+      piezasPorHora: it.articulo.piezasPorHora,
+    },
     cliente: { nombre: it.articulo.cliente.nombre },
     pausaActiva: pausaActiva ? { id: pausaActiva.id, inicio: pausaActiva.inicio.toISOString() } : null,
     pausasFinalizadasMs,

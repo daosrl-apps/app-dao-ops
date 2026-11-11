@@ -121,6 +121,19 @@ function numOpcional(raw: string): number | null {
 }
 
 /**
+ * Normaliza el código de artículo: quita espacios en los bordes y, si el código
+ * es numérico con ceros a la izquierda (ej. "000017" vs "17"), elimina los ceros
+ * iniciales para evitar duplicados cuando el CSV pasa por Excel.
+ */
+export function normalizarCodigoArticulo(raw: string): string {
+  const limpio = raw.trim();
+  if (/^0+\d+$/.test(limpio)) {
+    return limpio.replace(/^0+(?=\d+$)/, "");
+  }
+  return limpio;
+}
+
+/**
  * Procesa el texto del CSV. Detecta y descarta el header si lo hay; mapea las
  * columnas por nombre.
  */
@@ -145,8 +158,8 @@ export function procesarCsvArticulos(csvText: string): ProcesoCsvResult {
     // Fila completamente vacía → ignorar
     if (!r.some((c) => c.trim().length > 0)) continue;
 
-    const codigo = cell(r, "codigo");
-    const cliente = cell(r, "cliente");
+    const codigo = normalizarCodigoArticulo(cell(r, "codigo"));
+    const cliente = cell(r, "cliente").trim();
 
     if (!codigo) {
       errores.push({
@@ -195,9 +208,8 @@ export function procesarCsvArticulos(csvText: string): ProcesoCsvResult {
     const descripcion = cell(r, "descripcion") || null;
     const textoColor = [descripcion, codigo].filter(Boolean).join(" ");
     const { color, revisar } = parseColor(textoColor);
-    if (revisar) articulosSinColor++;
 
-    filas.push({
+    const nuevaFila: FilaProcesada = {
       lineaOriginal: linea,
       cliente,
       codigo,
@@ -210,7 +222,19 @@ export function procesarCsvArticulos(csvText: string): ProcesoCsvResult {
       piezasPorHora,
       color,
       colorRevisar: revisar,
-    });
+    };
+
+    // Si el mismo CSV trae dos filas con igual (cliente, codigo), reemplazamos la previa
+    const prevIdx = filas.findIndex(
+      (f) => f.cliente.toLowerCase() === cliente.toLowerCase() && f.codigo === codigo,
+    );
+    if (prevIdx >= 0) {
+      if (filas[prevIdx].colorRevisar) articulosSinColor--;
+      filas[prevIdx] = nuevaFila;
+    } else {
+      filas.push(nuevaFila);
+    }
+    if (revisar) articulosSinColor++;
   }
 
   return {

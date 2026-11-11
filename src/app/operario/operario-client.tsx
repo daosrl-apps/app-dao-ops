@@ -369,7 +369,15 @@ function OrdenPendiente({
       </p>
       <p className="text-2xl font-bold text-slate-300 mb-8">
         {item.cantidad} piezas
-        {item.tipo === "PINTURA" && ` · ${item.color}`}
+        {item.tipo === "PINTURA" && (
+          <>
+            {` · ${item.color}`}
+            {item.articulo.piezasPorVuelta != null && ` · ${item.articulo.piezasPorVuelta} pzs/vuelta`}
+            {item.articulo.velLineaMtsMin != null && ` · ${item.articulo.velLineaMtsMin} m/min`}
+            {item.articulo.piezasPorHora != null &&
+              ` · ${Math.round(item.articulo.piezasPorHora * 10) / 10} pzs/h`}
+          </>
+        )}
         {item.tipo === "LAVADO" &&
           item.piezasPorPercha != null &&
           item.velocidadLavado != null &&
@@ -426,7 +434,13 @@ function OrdenEnCurso({
           {nombreOrden(item)}
         </p>
         {item.tipo === "PINTURA" && (
-          <p className="text-2xl md:text-3xl font-bold text-slate-300 mt-1">{item.color}</p>
+          <p className="text-2xl md:text-3xl font-bold text-slate-300 mt-1">
+            {item.color}
+            {item.articulo.piezasPorVuelta != null && ` · ${item.articulo.piezasPorVuelta} pzs/vuelta`}
+            {item.articulo.velLineaMtsMin != null && ` · ${item.articulo.velLineaMtsMin} m/min`}
+            {item.articulo.piezasPorHora != null &&
+              ` · ${Math.round(item.articulo.piezasPorHora * 10) / 10} pzs/h`}
+          </p>
         )}
         {item.tipo === "LAVADO" &&
           item.piezasPorPercha != null &&

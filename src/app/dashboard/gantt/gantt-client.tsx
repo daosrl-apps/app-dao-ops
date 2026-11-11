@@ -2,12 +2,13 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Droplets, Paintbrush, Smartphone, ZoomIn, ZoomOut } from "lucide-react";
+import { ChevronDown, ChevronUp, Droplets, Paintbrush, ZoomIn, ZoomOut } from "lucide-react";
 import { formatFecha, formatFechaHora } from "@/lib/utils";
 
 export interface GanttOT {
   id: string;
   numero: number;
+  cantidad: number;
   estado: "PENDIENTE" | "EN_CURSO" | "FINALIZADO" | "CANCELADO";
   tipo: "LAVADO" | "PINTURA";
   color: string;
@@ -24,8 +25,11 @@ export interface GanttOT {
   minutosColor?: number;
 }
 
-const ROW_H = 52;
-const LABEL_W = 240;
+const ROW_H_DESKTOP = 52;
+const ROW_H_MOBILE = 40;
+const LABEL_W_DESKTOP = 240;
+const LABEL_W_MOBILE_LANDSCAPE = 155;
+const LABEL_W_MOBILE_PORTRAIT = 128;
 const PX_MIN = 16;
 const PX_MAX = 320;
 const PX_DEFAULT = 64;
@@ -54,18 +58,35 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
   const [px, setPx] = React.useState(PX_DEFAULT);
   const [verProyectado, setVerProyectado] = React.useState(true);
   const [verReal, setVerReal] = React.useState(true);
-  // Ventana visible (sub-rango del total). `null` hasta que el efecto de montaje
-  // la inicializa en "las últimas 10 h".
   const [view, setView] = React.useState<{ start: number; end: number } | null>(null);
+  const [mostrarControlesMobile, setMostrarControlesMobile] = React.useState(false);
+  const [viewport, setViewport] = React.useState<{ w: number; h: number }>({ w: 1200, h: 800 });
   const scrollRef = React.useRef<HTMLDivElement>(null);
 
-  // `now` arranca null para no romper la hidratación (server y cliente coinciden);
-  // tras montar lo seteamos y, si hay OTs en curso, lo refrescamos cada minuto.
+  React.useEffect(() => {
+    const updateSize = () => {
+      setViewport({ w: window.innerWidth, h: window.innerHeight });
+    };
+    updateSize();
+    window.addEventListener("resize", updateSize);
+    window.addEventListener("orientationchange", updateSize);
+    return () => {
+      window.removeEventListener("resize", updateSize);
+      window.removeEventListener("orientationchange", updateSize);
+    };
+  }, []);
+
+  const isPhone = viewport.w < 768 || viewport.h < 520;
+  const labelW = isPhone
+    ? viewport.w < 480
+      ? LABEL_W_MOBILE_PORTRAIT
+      : LABEL_W_MOBILE_LANDSCAPE
+    : LABEL_W_DESKTOP;
+  const rowH = isPhone ? ROW_H_MOBILE : ROW_H_DESKTOP;
+
   const [now, setNow] = React.useState<number | null>(null);
   React.useEffect(() => {
     setNow(Date.now());
-    // Tickea cada minuto para mantener la línea de "ahora" (y las barras en
-    // curso) actualizadas.
     const id = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(id);
   }, [items]);
@@ -101,8 +122,6 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
   const zoom = (factor: number) =>
     setPx((p) => Math.min(PX_MAX, Math.max(PX_MIN, Math.round(p * factor))));
 
-  // Presets de ventana: últimas N horas terminando en "ahora" (o en el fin de
-  // los datos si "ahora" cae después). "Todo" muestra la extensión completa.
   const aplicarVentana = (widthMs: number) => {
     if (!hayDatos) return;
     const span = fullMaxMs - fullMinMs;
@@ -121,35 +140,55 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
   }
 
   const toolbar = (
-    <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-      <div className="flex items-center gap-2">
-        <FiltroToggle activo={verProyectado} onClick={() => setVerProyectado((v) => !v)}>
-          <span className="inline-block h-3 w-5 rounded-sm bg-emerald-500" />
+    <div className="mb-1.5 sm:mb-3 flex flex-wrap items-center justify-between gap-1.5 sm:gap-3">
+      <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+        <FiltroToggle activo={verProyectado} onClick={() => setVerProyectado((v) => !v)} compact={isPhone}>
+          <span className="inline-block h-2.5 w-4 sm:h-3 sm:w-5 rounded-sm bg-emerald-500" />
           Proyectado
         </FiltroToggle>
-        <FiltroToggle activo={verReal} onClick={() => setVerReal((v) => !v)}>
-          <span className="inline-block h-3 w-5 rounded-sm border-2 border-dotted border-slate-700" />
+        <FiltroToggle activo={verReal} onClick={() => setVerReal((v) => !v)} compact={isPhone}>
+          <span className="inline-block h-2.5 w-4 sm:h-3 sm:w-5 rounded-sm border-2 border-dotted border-slate-700" />
           Real
         </FiltroToggle>
+        {isPhone && hayDatos && (
+          <div className="flex items-center gap-1">
+            <PresetBtn onClick={() => aplicarVentana(24 * HORA_MS)}>24h</PresetBtn>
+            <PresetBtn onClick={() => aplicarVentana(48 * HORA_MS)}>48h</PresetBtn>
+            <PresetBtn onClick={verTodo}>Todo</PresetBtn>
+          </div>
+        )}
       </div>
-      <div className="flex items-center gap-2">
-        <p className="flex items-center gap-2 text-sm text-slate-500 sm:hidden">
-          <Smartphone className="h-4 w-4" /> Girá el celular.
-        </p>
-        <span className="text-sm text-slate-500">Zoom</span>
+      <div className="flex items-center gap-1 sm:gap-2">
+        {isPhone && hayDatos && (
+          <button
+            onClick={() => setMostrarControlesMobile((v) => !v)}
+            className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700"
+          >
+            {mostrarControlesMobile ? (
+              <>
+                Ocultar regla <ChevronUp className="h-3.5 w-3.5" />
+              </>
+            ) : (
+              <>
+                Regla <ChevronDown className="h-3.5 w-3.5" />
+              </>
+            )}
+          </button>
+        )}
+        <span className="hidden sm:inline text-sm text-slate-500">Zoom</span>
         <button
           onClick={() => zoom(1 / 1.4)}
-          className="rounded-lg border border-slate-300 p-2 text-slate-700 hover:bg-slate-100"
+          className="rounded-lg border border-slate-300 p-1.5 sm:p-2 text-slate-700 hover:bg-slate-100"
           aria-label="Alejar"
         >
-          <ZoomOut className="h-4 w-4" />
+          <ZoomOut className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
         </button>
         <button
           onClick={() => zoom(1.4)}
-          className="rounded-lg border border-slate-300 p-2 text-slate-700 hover:bg-slate-100"
+          className="rounded-lg border border-slate-300 p-1.5 sm:p-2 text-slate-700 hover:bg-slate-100"
           aria-label="Acercar"
         >
-          <ZoomIn className="h-4 w-4" />
+          <ZoomIn className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
         </button>
       </div>
     </div>
@@ -213,62 +252,67 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
     d0 = next;
   }
 
-  // Límites de día (medianoche) dentro del rango → línea roja vertical de cambio
-  // de día. Son los comienzos de cada segmento de día salvo el primero.
   const limites = dias.slice(1).map((s) => s.x);
-  // Línea vertical de "ahora" (hora actual), si cae dentro del rango visible.
   const nowX =
     now != null && now >= min.getTime() && now <= max.getTime() ? xDe(now) : null;
+
+  const dateHeaderH = isPhone ? 22 : 28;
+  const hourHeaderH = isPhone ? 20 : 26;
 
   return (
     <>
       {toolbar}
 
-      {/* Barra selectora de ventana temporal + presets. */}
-      <div className="mb-3 rounded-2xl bg-white shadow-sm border border-slate-200 p-3">
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <span className="text-sm font-semibold text-slate-700 tabular-nums">
-            {rangoVentana(winStartMs, winEndMs)}
-          </span>
-          <div className="flex items-center gap-1">
-            <PresetBtn onClick={() => aplicarVentana(24 * HORA_MS)}>24 h</PresetBtn>
-            <PresetBtn onClick={() => aplicarVentana(48 * HORA_MS)}>48 h</PresetBtn>
-            <PresetBtn onClick={() => aplicarVentana(7 * 24 * HORA_MS)}>7 d</PresetBtn>
-            <PresetBtn onClick={verTodo}>Todo</PresetBtn>
+      {/* Barra selectora de ventana temporal + presets (en teléfono se oculta por defecto para dar máximo lugar al gráfico). */}
+      {(!isPhone || mostrarControlesMobile) && (
+        <div className="mb-2 sm:mb-3 rounded-xl sm:rounded-2xl bg-white shadow-sm border border-slate-200 p-2 sm:p-3">
+          <div className="mb-1.5 sm:mb-2 flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs sm:text-sm font-semibold text-slate-700 tabular-nums">
+              {rangoVentana(winStartMs, winEndMs)}
+            </span>
+            <div className="flex items-center gap-1">
+              <PresetBtn onClick={() => aplicarVentana(24 * HORA_MS)}>24 h</PresetBtn>
+              <PresetBtn onClick={() => aplicarVentana(48 * HORA_MS)}>48 h</PresetBtn>
+              <PresetBtn onClick={() => aplicarVentana(7 * 24 * HORA_MS)}>7 d</PresetBtn>
+              <PresetBtn onClick={verTodo}>Todo</PresetBtn>
+            </div>
           </div>
+          <BrushSelector
+            fullMin={fullMinMs}
+            fullMax={fullMaxMs}
+            value={{ start: winStartMs, end: winEndMs }}
+            now={now}
+            onChange={(start, end) => setView({ start, end })}
+          />
         </div>
-        <BrushSelector
-          fullMin={fullMinMs}
-          fullMax={fullMaxMs}
-          value={{ start: winStartMs, end: winEndMs }}
-          now={now}
-          onChange={(start, end) => setView({ start, end })}
-        />
-      </div>
+      )}
 
       <div
         ref={scrollRef}
-        className="overflow-auto max-h-[75vh] rounded-2xl bg-white shadow-sm border border-slate-200"
+        className="overflow-auto rounded-xl sm:rounded-2xl bg-white shadow-sm border border-slate-200"
+        style={{
+          maxHeight: isPhone ? "calc(100dvh - 54px)" : "75vh",
+        }}
       >
-        <div style={{ width: LABEL_W + trackW }}>
-          {/* Encabezado: fila de fecha + fila de hora (sticky arriba) */}
-          <div className="sticky top-0 z-30 bg-slate-50">
+        <div style={{ width: labelW + trackW }}>
+          {/* Encabezado: en escritorio queda sticky; en teléfono se desplaza al hacer scroll vertical para no tapar la pantalla */}
+          <div className={isPhone ? "bg-slate-50" : "sticky top-0 z-30 bg-slate-50"}>
             {/* Fila de fecha */}
             <div className="flex border-b border-slate-200">
               <div
-                className="sticky left-0 z-10 flex items-center bg-slate-50 border-r border-slate-200 px-3 text-xs font-bold uppercase tracking-wide text-slate-500"
-                style={{ width: LABEL_W, minWidth: LABEL_W, height: 28 }}
+                className="sticky left-0 z-10 flex items-center bg-slate-50 border-r border-slate-200 px-2 sm:px-3 text-[10px] sm:text-xs font-bold uppercase tracking-wide text-slate-500"
+                style={{ width: labelW, minWidth: labelW, height: dateHeaderH }}
               >
-                Orden de trabajo
+                Producto / Piezas
               </div>
-              <div className="relative" style={{ width: trackW, height: 28 }}>
+              <div className="relative" style={{ width: trackW, height: dateHeaderH }}>
                 {dias.map((s, i) => (
                   <div
                     key={i}
                     className="absolute top-0 h-full border-l border-slate-200 flex items-center"
                     style={{ left: s.x, width: s.w }}
                   >
-                    <span className="px-2 text-xs font-bold text-slate-600 whitespace-nowrap">
+                    <span className="px-1.5 sm:px-2 text-[10px] sm:text-xs font-bold text-slate-600 whitespace-nowrap">
                       {s.label}
                     </span>
                   </div>
@@ -292,9 +336,9 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
             <div className="flex border-b border-slate-200">
               <div
                 className="sticky left-0 z-10 bg-slate-50 border-r border-slate-200"
-                style={{ width: LABEL_W, minWidth: LABEL_W, height: 26 }}
+                style={{ width: labelW, minWidth: labelW, height: hourHeaderH }}
               />
-              <div className="relative" style={{ width: trackW, height: 26 }}>
+              <div className="relative" style={{ width: trackW, height: hourHeaderH }}>
                 {ticks.map((t, i) => (
                   <div
                     key={i}
@@ -302,7 +346,7 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
                     style={{ left: t.x }}
                   >
                     {t.label && (
-                      <span className="absolute left-1 top-1 text-[11px] font-medium text-slate-500 whitespace-nowrap">
+                      <span className="absolute left-1 top-0.5 text-[10px] sm:text-[11px] font-medium text-slate-500 whitespace-nowrap">
                         {pad(t.d.getHours())}:00
                       </span>
                     )}
@@ -320,7 +364,7 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
                     className="absolute top-0 h-full border-l-2 border-red-600"
                     style={{ left: nowX }}
                   >
-                    <span className="absolute -top-0.5 left-1 rounded bg-red-600 px-1 text-[10px] font-bold text-white whitespace-nowrap">
+                    <span className="absolute -top-0.5 left-1 rounded bg-red-600 px-1 text-[9px] sm:text-[10px] font-bold text-white whitespace-nowrap">
                       ahora {now != null ? formatHHMM(now) : ""}
                     </span>
                   </div>
@@ -339,20 +383,23 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
               <div
                 key={o.id}
                 className={"flex items-stretch " + (rowI % 2 ? "bg-white" : "bg-slate-50/40")}
-                style={{ minHeight: ROW_H }}
+                style={{ minHeight: rowH }}
               >
                 <button
                   onClick={() => router.push(`/dashboard/ordenes/${o.id}`)}
-                  className="sticky left-0 z-10 flex items-center gap-2 border-r border-b border-slate-200 bg-inherit px-3 py-2 text-left text-sm font-bold text-slate-800 hover:text-[#1627b1]"
-                  style={{ width: LABEL_W, minWidth: LABEL_W }}
+                  className="sticky left-0 z-10 flex items-center gap-1.5 sm:gap-2 border-r border-b border-slate-200 bg-inherit px-2 sm:px-3 py-1 sm:py-2 text-left text-xs sm:text-sm font-bold text-slate-800 hover:text-[#1627b1]"
+                  style={{ width: labelW, minWidth: labelW }}
                 >
                   {lavado ? (
-                    <Droplets className="h-4 w-4 shrink-0 text-sky-600" />
+                    <Droplets className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0 text-sky-600" />
                   ) : (
-                    <Paintbrush className="h-4 w-4 shrink-0 text-emerald-600" />
+                    <Paintbrush className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0 text-emerald-600" />
                   )}
                   <span className="whitespace-normal break-words leading-tight">
-                    #{o.numero} {o.titulo}
+                    {o.titulo}{" "}
+                    <span className="inline-block rounded bg-slate-200/80 px-1 py-0.5 text-[10px] sm:text-xs font-extrabold text-slate-700 tabular-nums">
+                      {o.cantidad} pzs
+                    </span>
                   </span>
                 </button>
                 <div
@@ -367,7 +414,7 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
                     />
                   ))}
 
-                  {/* Cambio de día: línea roja vertical en cada medianoche */}
+                  {/* Cambio de día: línea vertical en cada medianoche */}
                   {limites.map((x, li) => (
                     <div
                       key={"lim" + li}
@@ -392,9 +439,9 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
                         "absolute top-1/2 -translate-y-1/2 z-10 rounded-md shadow-sm " +
                         (lavado ? "bg-sky-500 hover:bg-sky-600" : "bg-emerald-500 hover:bg-emerald-600")
                       }
-                      style={{ left: proyLeft, width: proyWidth, height: 16 }}
-                      title={`#${o.numero} ${o.titulo} · Proyectado: ${rango(o.inicio, o.fin)}`}
-                      aria-label={`OT ${o.numero} proyectado`}
+                      style={{ left: proyLeft, width: proyWidth, height: isPhone ? 13 : 16 }}
+                      title={`${o.titulo} (${o.cantidad} pzs) · Proyectado: ${rango(o.inicio, o.fin)}`}
+                      aria-label={`${o.titulo} (${o.cantidad} pzs) proyectado`}
                     />
                   )}
 
@@ -406,10 +453,10 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
                       style={{
                         left: xDe(rs.start),
                         width: Math.max(4, xDe(rs.end) - xDe(rs.start)),
-                        height: 26,
+                        height: isPhone ? 21 : 26,
                       }}
-                      title={`#${o.numero} ${o.titulo} · Real: ${rangoMs(rs.start, rs.end)}`}
-                      aria-label={`OT ${o.numero} real`}
+                      title={`${o.titulo} (${o.cantidad} pzs) · Real: ${rangoMs(rs.start, rs.end)}`}
+                      aria-label={`${o.titulo} (${o.cantidad} pzs) real`}
                     />
                   )}
 
@@ -427,7 +474,7 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
                           style={{
                             left: xDe(ini),
                             width: Math.max(2, xDe(fin) - xDe(ini)),
-                            height: 26,
+                            height: isPhone ? 21 : 26,
                           }}
                           title={`Pausado: ${rangoMs(new Date(p.inicio).getTime(), new Date(p.fin).getTime())}`}
                         />
@@ -438,7 +485,7 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
             );
           })}
           {filas.length === 0 && (
-            <div className="p-6 text-sm text-slate-500" style={{ width: LABEL_W + trackW }}>
+            <div className="p-6 text-sm text-slate-500" style={{ width: labelW + trackW }}>
               Ninguna OT cae en la ventana seleccionada. Movés la barra de arriba o tocás{" "}
               <b>Todo</b> para ver el rango completo.
             </div>
@@ -447,30 +494,30 @@ export function GanttClient({ items }: { items: GanttOT[] }) {
       </div>
 
       {ocultas > 0 && (
-        <p className="mt-2 text-sm text-slate-500">
+        <p className="mt-1.5 text-xs sm:text-sm text-slate-500">
           Mostrando <b>{filas.length}</b> de {items.length} OTs · {ocultas} fuera de la ventana.
         </p>
       )}
 
-      <div className="mt-3 flex flex-wrap items-center gap-4 text-sm text-slate-600">
+      <div className="mt-2 sm:mt-3 flex flex-wrap items-center gap-2.5 sm:gap-4 text-xs sm:text-sm text-slate-600">
         <Leyenda className="bg-sky-500" label="Proyectado: Lavado" />
         <Leyenda className="bg-emerald-500" label="Proyectado: Pintura" />
         <span className="text-slate-300">|</span>
-        <span className="inline-flex items-center gap-2">
-          <span className="inline-block h-3 w-5 rounded-sm border-2 border-dotted border-slate-700" />
-          Real (línea de puntos)
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block h-2.5 w-4 sm:h-3 sm:w-5 rounded-sm border-2 border-dotted border-slate-700" />
+          Real
         </span>
-        <span className="inline-flex items-center gap-2">
-          <span className="inline-block h-3 w-5 rounded-sm bg-slate-500" />
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block h-2.5 w-4 sm:h-3 sm:w-5 rounded-sm bg-slate-500" />
           Pausado
         </span>
         <span className="text-slate-300">|</span>
-        <span className="inline-flex items-center gap-2">
-          <span className="inline-block h-4 w-0.5 bg-red-600" />
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block h-3.5 w-0.5 bg-red-600" />
           Ahora
         </span>
-        <span className="inline-flex items-center gap-2">
-          <span className="inline-block h-4 w-0.5 bg-amber-500" />
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block h-3.5 w-0.5 bg-amber-500" />
           Cambio de día
         </span>
       </div>
@@ -482,19 +529,13 @@ function PresetBtn({ onClick, children }: { onClick: () => void; children: React
   return (
     <button
       onClick={onClick}
-      className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-bold text-slate-700 hover:bg-slate-100"
+      className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-100"
     >
       {children}
     </button>
   );
 }
 
-/**
- * Barra selectora de ventana temporal (brush). Representa toda la extensión de
- * datos (`fullMin`..`fullMax`) con un recuadro que se puede arrastrar para
- * desplazar la ventana y redimensionar desde los bordes. Soporta mouse y touch
- * vía pointer events. El cambio se comunica con `onChange(start, end)`.
- */
 function BrushSelector({
   fullMin,
   fullMax,
@@ -548,7 +589,7 @@ function BrushSelector({
   return (
     <div
       ref={ref}
-      className="relative h-10 select-none touch-none rounded-lg border border-slate-200 bg-slate-100"
+      className="relative h-8 sm:h-10 select-none touch-none rounded-lg border border-slate-200 bg-slate-100"
       onPointerMove={onMove}
       onPointerUp={end}
       onPointerCancel={end}
@@ -565,13 +606,13 @@ function BrushSelector({
           className="absolute -left-1.5 top-0 flex h-full w-3 cursor-ew-resize items-center justify-center"
           onPointerDown={begin("l")}
         >
-          <span className="h-5 w-1 rounded bg-[#1627b1]" />
+          <span className="h-4 sm:h-5 w-1 rounded bg-[#1627b1]" />
         </div>
         <div
           className="absolute -right-1.5 top-0 flex h-full w-3 cursor-ew-resize items-center justify-center"
           onPointerDown={begin("r")}
         >
-          <span className="h-5 w-1 rounded bg-[#1627b1]" />
+          <span className="h-4 sm:h-5 w-1 rounded bg-[#1627b1]" />
         </div>
       </div>
     </div>
@@ -581,10 +622,12 @@ function BrushSelector({
 function FiltroToggle({
   activo,
   onClick,
+  compact,
   children,
 }: {
   activo: boolean;
   onClick: () => void;
+  compact?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -592,7 +635,8 @@ function FiltroToggle({
       onClick={onClick}
       aria-pressed={activo}
       className={
-        "inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors " +
+        "inline-flex items-center gap-1.5 rounded-lg border font-medium transition-colors " +
+        (compact ? "px-2 py-1 text-xs " : "px-3 py-2 text-sm ") +
         (activo
           ? "border-[#1627b1] bg-[#1627b1]/5 text-slate-800"
           : "border-slate-300 bg-white text-slate-400 hover:bg-slate-50")
@@ -605,8 +649,8 @@ function FiltroToggle({
 
 function Leyenda({ className, label }: { className: string; label: string }) {
   return (
-    <span className="inline-flex items-center gap-2">
-      <span className={"inline-block h-3 w-3 rounded-sm " + className} />
+    <span className="inline-flex items-center gap-1.5">
+      <span className={"inline-block h-2.5 w-2.5 sm:h-3 sm:w-3 rounded-sm " + className} />
       {label}
     </span>
   );
@@ -649,12 +693,10 @@ function rangoVentana(inicioMs: number, finMs: number): string {
   return `${formatFechaHora(new Date(inicioMs))} → ${formatFechaHora(new Date(finMs))}`;
 }
 
-/** Ventana centrada en `nowMs`, abarcando `semiMs` hacia cada lado. */
 function ventanaCentrada(nowMs: number, semiMs: number): { start: number; end: number } {
   return { start: nowMs - semiMs, end: nowMs + semiMs };
 }
 
-/** Acota [start, end] a [fullMin, fullMax] conservando el ancho cuando se puede. */
 function clampVentana(
   start: number,
   end: number,

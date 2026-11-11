@@ -46,10 +46,15 @@ export default async function OrdenesListPage() {
     inicioReal: o.inicioReal?.toISOString() ?? null,
     finReal: o.finReal?.toISOString() ?? null,
     creadoPor: o.creadoPor.name,
+    piezasPorPercha: o.piezasPorPercha,
+    velocidadLavado: o.velocidadLavado,
     articulo: {
       codigo: o.articulo.codigo,
       descripcion: o.articulo.descripcion,
       cliente: o.articulo.cliente.nombre,
+      piezasPorVuelta: o.articulo.piezasPorVuelta,
+      velLineaMtsMin: o.articulo.velLineaMtsMin,
+      piezasPorHora: o.articulo.piezasPorHora,
     },
     esContinuacion: o.ordenPadreId !== null,
   }));

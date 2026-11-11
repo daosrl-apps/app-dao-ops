@@ -35,6 +35,7 @@ export default async function GanttPage() {
   const items: GanttOT[] = ordenes.map((o) => ({
     id: o.id,
     numero: o.numero,
+    cantidad: o.cantidad,
     estado: o.estado,
     tipo: o.tipo,
     color: o.color,
@@ -52,11 +53,13 @@ export default async function GanttPage() {
   }));
 
   return (
-    <section className="mx-auto w-full max-w-[1600px] p-4 sm:p-6">
-      <h1 className="text-3xl font-bold text-slate-800 mb-2">Gantt</h1>
-      <p className="text-slate-600 mb-4">
-        Órdenes de trabajo sobre una regla de tiempo. Girá el celular para ver mejor el diagrama.
-      </p>
+    <section className="mx-auto w-full max-w-[1600px] p-1.5 sm:p-4 md:p-6">
+      <div className="hidden md:block">
+        <h1 className="text-3xl font-bold text-slate-800 mb-1">Gantt</h1>
+        <p className="text-slate-600 mb-4">
+          Órdenes de trabajo sobre una regla de tiempo continua.
+        </p>
+      </div>
       <GanttClient items={items} />
     </section>
   );
