@@ -140,7 +140,7 @@ jobs:
             printf '%s\n' '#!/bin/sh' 'docker compose -f /opt/docker/app-dao-ops/compose.yaml -f /opt/docker/app-dao-ops/compose.prod.yaml exec -T nginx nginx -s reload 2>/dev/null || docker restart app-dao-ops-nginx-1 2>/dev/null || true' > /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
             chmod +x /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
 
-            for domain in planta.daosrl.com.ar 3dceci.daosrl.com.ar metricas.daosrl.com.ar comidas.daosrl.com.ar; do
+            for domain in planta.daosrl.com.ar 3dceci.daosrl.com.ar metricas.daosrl.com.ar comidas.daosrl.com.ar cienciadedatos.daosrl.com.ar; do
               echo "--> Verificando SSL para $domain..."
               certbot certonly --webroot -w /var/www/certbot -d "$domain" --non-interactive --agree-tos --register-unsafely-without-email --keep-until-expiring || echo "    warn: certbot falló para $domain"
             done
