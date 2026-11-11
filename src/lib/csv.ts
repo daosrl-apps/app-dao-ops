@@ -11,14 +11,31 @@
 export interface ParseCsvResult {
   /// Filas como arrays de strings (header incluida si la hay).
   rows: string[][];
-  separator: ",";
+  separator: "," | ";";
+}
+
+function detectarSeparador(text: string): "," | ";" {
+  let comas = 0;
+  let puntoYComas = 0;
+  let inQuotes = false;
+  const limit = Math.min(text.length, 4000);
+  for (let i = 0; i < limit; i++) {
+    const c = text[i];
+    if (c === '"') {
+      inQuotes = !inQuotes;
+    } else if (!inQuotes) {
+      if (c === ",") comas++;
+      else if (c === ";") puntoYComas++;
+    }
+  }
+  return puntoYComas > comas ? ";" : ",";
 }
 
 export function parseCsv(text: string): ParseCsvResult {
   // Strip BOM
   if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
 
-  const sep = "," as const;
+  const sep = detectarSeparador(text);
   const rows: string[][] = [];
   let field = "";
   let row: string[] = [];
@@ -85,13 +102,14 @@ export function parseCsv(text: string): ParseCsvResult {
 }
 
 /**
- * Convierte un string a número. Acepta `.` como separador decimal y miles
- * sin separador (es lo que sale del CSV con sep `,`). No usamos coma decimal
- * acá porque rompería con el separador de columnas.
+ * Convierte un string a número. Acepta tanto `.` como `,` como separador decimal
+ * (por ejemplo `0.45` o `0,45` cuando el CSV se guarda desde Excel en español).
  */
 export function parseNumeroLatam(s: string): number | null {
   const limpio = s.trim();
   if (limpio === "") return null;
-  const n = Number(limpio);
+  const normalizado =
+    limpio.includes(",") && !limpio.includes(".") ? limpio.replace(",", ".") : limpio;
+  const n = Number(normalizado);
   return Number.isFinite(n) ? n : null;
 }

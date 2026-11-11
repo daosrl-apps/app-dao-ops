@@ -41,9 +41,10 @@ describe("parseCsv", () => {
 });
 
 describe("parseNumeroLatam", () => {
-  it("parsea enteros y decimales con punto", () => {
+  it("parsea enteros y decimales con punto o coma", () => {
     expect(parseNumeroLatam("120")).toBe(120);
     expect(parseNumeroLatam("12.5")).toBe(12.5);
+    expect(parseNumeroLatam("12,5")).toBe(12.5);
   });
   it("recorta espacios", () => {
     expect(parseNumeroLatam("  7 ")).toBe(7);
